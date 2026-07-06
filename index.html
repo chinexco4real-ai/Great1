@@ -1,0 +1,2175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>TICKFRAME — Price Action EA</title>
+<style>
+  @font-face { font-family: 'system'; src: local('-apple-system'); }
+  :root{
+    --bg:        #0a0e0d;
+    --panel:     #0f1513;
+    --panel-2:   #131a18;
+    --line:      #1e2825;
+    --line-soft: #161d1b;
+    --ink:       #d8e6e0;
+    --ink-dim:   #6f8580;
+    --ink-faint: #445651;
+    --rise:      #3ddc97;
+    --rise-dim:  #1d4e3a;
+    --fall:      #ff5d6c;
+    --fall-dim:  #5a2229;
+    --amber:     #e8b84b;
+    --wire:      #2a3835;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    font-size:13px; line-height:1.4;
+    background-image:
+      radial-gradient(ellipse at top left, rgba(61,220,151,0.04), transparent 50%),
+      radial-gradient(ellipse at bottom right, rgba(255,93,108,0.03), transparent 50%);
+  }
+  ::selection{ background:var(--rise); color:#04120c; }
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+
+  a, button, input, select{ font-family:inherit; }
+
+  /* ---------- Layout shell ---------- */
+  #app{ max-width:1180px; margin:0 auto; padding:18px 16px 60px; }
+
+  .brandbar{
+    display:flex; align-items:baseline; justify-content:space-between;
+    padding-bottom:14px; margin-bottom:16px; border-bottom:1px solid var(--line);
+  }
+  .brand{ display:flex; align-items:baseline; gap:10px; }
+  .brand .mark{
+    font-weight:700; letter-spacing:0.5px; font-size:16px; color:var(--ink);
+  }
+  .brand .mark span{ color:var(--rise); }
+  .brand .tag{ color:var(--ink-faint); font-size:11px; letter-spacing:0.4px; }
+  .conn-pill{
+    display:flex; align-items:center; gap:7px; font-size:11px; color:var(--ink-dim);
+    border:1px solid var(--line); padding:5px 10px; border-radius:20px; background:var(--panel);
+  }
+  .dot{ width:7px; height:7px; border-radius:50%; background:var(--ink-faint); flex-shrink:0; }
+  .dot.live{ background:var(--rise); box-shadow:0 0 8px var(--rise); animation:pulse 2s infinite; }
+  .dot.err{ background:var(--fall); box-shadow:0 0 8px var(--fall); }
+  .dot.wait{ background:var(--amber); box-shadow:0 0 8px var(--amber); }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:0.45} }
+
+  /* ---------- Gate screen (login) ---------- */
+  #gate{
+    max-width:460px; margin:8vh auto; padding:0 16px;
+  }
+  .gate-card{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:28px 24px;
+    position:relative; overflow:hidden;
+  }
+  .gate-card::before{
+    content:""; position:absolute; inset:0 0 auto 0; height:2px;
+    background:linear-gradient(90deg, var(--rise), transparent 60%);
+  }
+  .gate-title{ font-size:15px; font-weight:700; margin:0 0 4px; letter-spacing:0.3px; }
+  .gate-sub{ color:var(--ink-dim); font-size:11.5px; margin:0 0 22px; line-height:1.6; }
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:10.5px; color:var(--ink-dim); letter-spacing:0.6px; text-transform:uppercase; margin-bottom:6px; }
+  .field input, .field select{
+    width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    padding:10px 11px; border-radius:6px; font-size:13px; outline:none; transition:border-color .15s;
+  }
+  .field input:focus, .field select:focus{ border-color:var(--rise); }
+  .field-hint{ font-size:10.5px; color:var(--ink-faint); margin-top:6px; line-height:1.5; }
+  .field-hint a{ color:var(--rise); text-decoration:none; }
+  .field-hint a:hover{ text-decoration:underline; }
+  .cycle-status{
+    margin-top:4px; padding:10px 12px; border-radius:8px;
+    background:var(--panel-2); border:1px solid var(--line);
+    font-size:11.5px; color:var(--ink-dim); line-height:1.6;
+  }
+  .cycle-status b{ color:var(--ink); }
+  .cycle-status .cd{ color:var(--amber); font-weight:600; }
+  .cycle-status.done{ border-color:var(--rise-dim); background:rgba(61,220,151,0.06); }
+  .cycle-status.done .cd{ color:var(--rise); }
+  .row{ display:flex; gap:10px; }
+  .row .field{ flex:1; }
+
+  .btn{
+    appearance:none; border:none; cursor:pointer; border-radius:6px;
+    font-family:inherit; font-size:12.5px; font-weight:600; letter-spacing:0.3px;
+    padding:11px 16px; transition:filter .12s, transform .05s;
+  }
+  .btn:active{ transform:scale(0.98); }
+  .btn-primary{ background:var(--rise); color:#04140d; width:100%; }
+  .btn-primary:hover{ filter:brightness(1.08); }
+  .btn-primary:disabled{ background:var(--wire); color:var(--ink-faint); cursor:not-allowed; }
+  .btn-connected{
+    background:var(--rise) !important; color:#04140d !important; cursor:default;
+    box-shadow:0 0 16px rgba(61,220,151,0.55), 0 0 4px rgba(61,220,151,0.8);
+    animation:connectedGlow 2s ease-in-out infinite;
+  }
+  @keyframes connectedGlow{
+    0%,100%{ box-shadow:0 0 16px rgba(61,220,151,0.55), 0 0 4px rgba(61,220,151,0.8); }
+    50%{ box-shadow:0 0 26px rgba(61,220,151,0.85), 0 0 8px rgba(61,220,151,1); }
+  }
+  .btn-ghost{ background:transparent; border:1px solid var(--line); color:var(--ink-dim); }
+  .btn-ghost:hover{ border-color:var(--ink-faint); color:var(--ink); }
+  .btn-danger-ghost{ background:transparent; border:1px solid var(--fall-dim); color:var(--fall); }
+  .btn-danger-ghost:hover{ background:rgba(255,93,108,0.08); }
+  .btn-reset-session{
+    appearance:none; cursor:pointer; border-radius:6px; font-family:inherit;
+    font-size:10.5px; font-weight:600; letter-spacing:0.2px; padding:5px 10px;
+    background:transparent; border:1px solid var(--fall-dim); color:var(--fall);
+    transition:filter .12s, transform .05s;
+  }
+  .btn-reset-session:hover{ background:rgba(255,93,108,0.08); }
+  .btn-reset-session:active{ transform:scale(0.97); }
+
+  .gate-error{
+    background:rgba(255,93,108,0.08); border:1px solid var(--fall-dim); color:var(--fall);
+    padding:9px 11px; border-radius:6px; font-size:11.5px; margin-bottom:14px; display:none;
+  }
+
+  /* ---------- Main dashboard ---------- */
+  #dash{ display:block; }
+  .grid{
+    display:grid; grid-template-columns: 1.35fr 1fr; gap:14px;
+  }
+  @media (max-width:860px){ .grid{ grid-template-columns:1fr; } }
+
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:16px; margin-bottom:14px;
+  }
+  .panel-head{
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;
+  }
+  .panel-title{
+    font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:var(--ink-dim); font-weight:600;
+  }
+  .panel-title b{ color:var(--ink); }
+
+  /* symbol + price */
+  .sym-select{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    padding:8px 10px; border-radius:6px; font-size:12.5px; outline:none;
+  }
+  .price-row{ display:flex; align-items:baseline; gap:14px; margin:6px 0 16px; flex-wrap:wrap; }
+  .price-main{ font-size:34px; font-weight:700; letter-spacing:-0.5px; font-variant-numeric:tabular-nums; }
+  .price-main.up{ color:var(--rise); }
+  .price-main.down{ color:var(--fall); }
+  .price-delta{ font-size:13px; font-variant-numeric:tabular-nums; }
+  .price-delta.up{ color:var(--rise); }
+  .price-delta.down{ color:var(--fall); }
+  .price-meta{ font-size:11px; color:var(--ink-faint); }
+
+  /* tick tape */
+  .tape{
+    display:flex; gap:3px; height:56px; align-items:flex-end; padding:6px 2px;
+    border-top:1px solid var(--line-soft); border-bottom:1px solid var(--line-soft);
+    margin-bottom:16px; overflow:hidden;
+  }
+  .tape-bar{ flex:1; min-width:2px; border-radius:1px; background:var(--wire); transition:height .1s; }
+  .tape-bar.up{ background:var(--rise); }
+  .tape-bar.down{ background:var(--fall); }
+
+  /* signal readout */
+  .signal-box{
+    border:1px solid var(--line); border-radius:8px; padding:16px; text-align:center;
+    background:var(--panel-2); position:relative; overflow:hidden;
+  }
+  .signal-level{ font-size:10.5px; letter-spacing:2px; color:var(--ink-faint); text-transform:uppercase; margin-bottom:8px; }
+  .signal-dir{ font-size:26px; font-weight:800; letter-spacing:1px; margin-bottom:6px; }
+  .signal-dir.rise{ color:var(--rise); } .signal-dir.fall{ color:var(--fall); } .signal-dir.none{ color:var(--ink-faint); }
+  .signal-conf{ font-size:11.5px; color:var(--ink-dim); }
+  .conf-bar{ height:5px; border-radius:3px; background:var(--wire); margin-top:12px; overflow:hidden; }
+  .conf-fill{ height:100%; border-radius:3px; transition:width .25s ease, background .25s ease; }
+
+  .badge{
+    display:inline-block; font-size:9.5px; font-weight:700; letter-spacing:0.8px;
+    padding:2px 7px; border-radius:4px; text-transform:uppercase;
+  }
+  .badge-low{ background:rgba(232,184,75,0.12); color:var(--amber); border:1px solid rgba(232,184,75,0.3); }
+  .badge-medium{ background:rgba(61,220,151,0.1); color:var(--rise); border:1px solid rgba(61,220,151,0.3); }
+  .badge-high{ background:rgba(61,220,151,0.18); color:var(--rise); border:1px solid var(--rise); }
+
+  /* factor readout */
+  .factors{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; }
+  .factor{
+    background:var(--panel-2); border:1px solid var(--line-soft); border-radius:6px; padding:9px 10px;
+  }
+  .factor-name{ font-size:9.5px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; }
+  .factor-val{ font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .factor-val.pos{ color:var(--rise); } .factor-val.neg{ color:var(--fall); } .factor-val.neu{ color:var(--ink-dim); }
+
+  /* controls */
+  .ctrl-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
+  .toggle-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 12px; background:var(--panel-2); border:1px solid var(--line); border-radius:7px; margin-bottom:9px;
+  }
+  .toggle-label{ font-size:11.5px; color:var(--ink); }
+  .toggle-sub{ font-size:10px; color:var(--ink-faint); margin-top:2px; }
+  .switch{ position:relative; width:38px; height:21px; flex-shrink:0; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider{
+    position:absolute; inset:0; background:var(--wire); border-radius:22px; cursor:pointer; transition:.2s;
+  }
+  .slider::before{
+    content:""; position:absolute; width:15px; height:15px; left:3px; top:3px;
+    background:var(--ink-dim); border-radius:50%; transition:.2s;
+  }
+  .switch input:checked + .slider{ background:var(--rise-dim); }
+  .switch input:checked + .slider::before{ transform:translateX(17px); background:var(--rise); }
+
+  .seg{
+    display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden;
+  }
+  .seg button{
+    flex:1; background:var(--panel-2); border:none; color:var(--ink-dim); padding:9px 6px;
+    font-size:11px; font-weight:600; cursor:pointer; border-right:1px solid var(--line); letter-spacing:0.3px;
+  }
+  .seg button:last-child{ border-right:none; }
+  .seg button.active{ background:var(--rise); color:#04140d; }
+  .seg button.active.fall-active{ background:var(--fall); color:#1a0507; }
+
+  /* stake / risk inputs */
+  .num-field{ display:flex; align-items:center; gap:8px; }
+  .num-field input{
+    width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    padding:9px 10px; border-radius:6px; font-size:13px; outline:none;
+  }
+  .num-field input:focus{ border-color:var(--rise); }
+
+  /* stats */
+  .stat-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .stat{ background:var(--panel-2); border:1px solid var(--line-soft); border-radius:7px; padding:10px; text-align:center; }
+  .stat-num{ font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat-num.pos{ color:var(--rise); } .stat-num.neg{ color:var(--fall); }
+  .stat-lbl{ font-size:9px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.5px; margin-top:3px; }
+
+  /* log */
+  .log{ max-height:280px; overflow-y:auto; }
+  .log-row{
+    display:grid; grid-template-columns:56px 46px 1fr 60px; gap:8px; align-items:center;
+    padding:8px 4px; border-bottom:1px solid var(--line-soft); font-size:11.5px;
+  }
+  .log-row:last-child{ border-bottom:none; }
+  .log-time{ color:var(--ink-faint); font-size:10.5px; }
+  .log-dir{ font-weight:700; }
+  .log-dir.rise{ color:var(--rise); } .log-dir.fall{ color:var(--fall); }
+  .log-desc{ color:var(--ink-dim); }
+  .log-market{ color:var(--ink); font-weight:600; }
+  .log-status{ text-align:right; font-size:10.5px; font-weight:600; }
+  .log-status.won{ color:var(--rise); }
+  .log-status.lost{ color:var(--fall); }
+  .log-status.open{ color:var(--amber); }
+  .log-empty{ text-align:center; color:var(--ink-faint); padding:24px 0; font-size:11.5px; }
+
+  .footer-note{
+    font-size:10.5px; color:var(--ink-faint); line-height:1.7; margin-top:6px;
+    border-top:1px solid var(--line-soft); padding-top:12px;
+  }
+
+  .top-actions{ display:flex; gap:8px; margin-bottom:14px; }
+  .top-actions .btn{ flex:1; }
+
+  .conn-row{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+  .conn-row .field{ margin-bottom:0; }
+
+  .filter-list{ display:flex; flex-direction:column; }
+  .filter-item{
+    display:flex; align-items:flex-start; gap:10px;
+    padding:10px 12px; border:1px solid var(--wire); border-radius:8px;
+    margin-bottom:8px; cursor:pointer; transition:border-color .15s, background .15s;
+  }
+  .filter-item:hover{ border-color:var(--ink-faint); }
+  .filter-item.checked{ border-color:var(--rise-dim); background:rgba(0,255,150,0.04); }
+  .filter-item input{ margin-top:2px; flex-shrink:0; accent-color:var(--rise); width:15px; height:15px; cursor:pointer; }
+  .filter-item-body{ flex:1; }
+  .filter-item-title{ font-size:12.5px; font-weight:600; color:var(--ink); }
+  .filter-item-sub{ font-size:10.5px; color:var(--ink-faint); margin-top:2px; line-height:1.4; }
+  .filter-reject-note{ font-size:10.5px; color:var(--fall); margin-top:4px; }
+  #connPanel.connected{ border-color:var(--rise-dim); }
+  #connPanel.connected #connRow{ opacity:0.55; pointer-events:none; }
+  #connPanel.connected #connHint{ display:none; }
+
+  #dash{ position:relative; }
+  #dash.locked{ opacity:0.35; pointer-events:none; user-select:none; filter:grayscale(0.4); }
+  .lock-note{
+    display:none; text-align:center; color:var(--ink-faint); font-size:11.5px;
+    padding:10px; margin-bottom:14px; border:1px dashed var(--line); border-radius:8px;
+  }
+  #dash.locked + .lock-note, #dash ~ .lock-note.show{ display:block; }
+
+  .master-flag{
+    display:flex; align-items:center; gap:10px; padding:14px; border-radius:8px; margin-bottom:14px;
+    border:1px solid var(--line);
+  }
+  .master-flag.on{ background:rgba(61,220,151,0.06); border-color:var(--rise-dim); }
+  .master-flag.off{ background:var(--panel-2); }
+  .master-flag .dot{ width:9px; height:9px; }
+  .master-flag-text b{ display:block; font-size:12.5px; }
+  .master-flag-text span{ font-size:10.5px; color:var(--ink-faint); }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <div class="brandbar">
+    <div class="brand">
+      <div class="mark">TICK<span>FRAME</span></div>
+      <div class="tag">price-action tick engine · rise/fall</div>
+    </div>
+    <div class="conn-pill" id="connPill">
+      <span id="balancePill" style="display:none; margin-right:10px; padding-right:10px; border-right:1px solid var(--line); color:var(--ink); font-weight:700; letter-spacing:0.3px;">—</span>
+      <div class="dot" id="connDot"></div>
+      <span id="connText">disconnected</span>
+      <span id="sessionTimer" style="display:none; margin-left:10px; padding-left:10px; border-left:1px solid var(--line); color:var(--ink); font-variant-numeric:tabular-nums; font-size:15px; font-weight:700; letter-spacing:0.5px;">00:00:00</span>
+    </div>
+  </div>
+
+  <!-- ============ CONNECTION BAR (unified login) ============ -->
+  <div class="panel" id="connPanel">
+    <div class="panel-head">
+      <div class="panel-title">Connection</div>
+    </div>
+
+    <div class="gate-error" id="gateError"></div>
+
+    <div class="conn-row" id="connRow">
+      <div class="field" style="flex:1.4;">
+        <label>Access token</label>
+        <input type="password" id="tokenInput" placeholder="Paste your Deriv OAuth2 / PAT token here" autocomplete="off">
+      </div>
+      <div class="field" style="flex:0.7;">
+        <label>Environment</label>
+        <select id="envSelect">
+          <option value="demo">Demo (virtual)</option>
+          <option value="real">Real (live)</option>
+        </select>
+      </div>
+      <div class="field" style="flex:0 0 auto;">
+        <label>&nbsp;</label>
+        <button class="btn btn-primary" id="connectBtn" style="white-space:nowrap;">Authorize &amp; connect</button>
+      </div>
+    </div>
+    <div class="field" style="margin-top:2px;">
+      <label>App ID <span style="text-transform:none; color:var(--ink-faint);">(required — the new API needs this on every REST call)</span></label>
+      <input type="text" id="appIdInput" placeholder="Your registered app_id" value="33ASXUrIJnjw7MMMaAuLL" autocomplete="off">
+    </div>
+    <div class="field-hint" id="connHint">
+      Deriv retired the Legacy WebSocket API. This build uses the new Options API: your token authenticates a short-lived REST call that returns a one-time-password WebSocket URL — there's no more direct <code>authorize</code> handshake. Generate a token (OAuth2 or Personal Access Token) at <a href="https://app.deriv.com/account/api-token" target="_blank" rel="noopener">app.deriv.com/account/api-token</a> with the <b>trade</b> scope, and register an app_id at <a href="https://developers.deriv.com" target="_blank" rel="noopener">developers.deriv.com</a> — the shared test app_id no longer works against the new endpoints.
+    </div>
+  </div>
+
+  <!-- ============ DASHBOARD ============ -->
+  <div class="lock-note show" id="lockNote">Connect your Deriv account above to unlock live signals and trading.</div>
+  <div id="dash" class="locked">
+
+    <div class="master-flag off" id="masterFlag">
+      <div class="dot" id="masterDot"></div>
+      <div class="master-flag-text">
+        <b id="masterText">Auto-trading is OFF</b>
+        <span id="masterSub">Signals will display but no trades will be placed.</span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- LEFT: market + signal -->
+      <div>
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">Market</div>
+            <select class="sym-select" id="symbolSelect">
+              <option value="R_10">Volatility 10 Index</option>
+              <option value="R_25">Volatility 25 Index</option>
+              <option value="R_50">Volatility 50 Index</option>
+              <option value="R_75" selected>Volatility 75 Index</option>
+              <option value="R_100">Volatility 100 Index</option>
+              <option value="stpRNG">Step Index 100</option>
+              <option value="stpRNG2">Step Index 200</option>
+              <option value="stpRNG3">Step Index 300</option>
+              <option value="stpRNG4">Step Index 400</option>
+              <option value="stpRNG5">Step Index 500</option>
+            </select>
+          </div>
+
+          <div class="price-row">
+            <div class="price-main" id="priceMain">—</div>
+            <div class="price-delta" id="priceDelta">—</div>
+            <div class="price-meta" id="priceMeta">waiting for ticks…</div>
+          </div>
+
+          <div class="tape" id="tape"></div>
+
+          <div class="signal-box">
+            <div class="signal-level" id="sigLevelLabel">NO SIGNAL</div>
+            <div class="signal-dir none" id="sigDir">— STANDING BY —</div>
+            <div class="signal-conf" id="sigConf">Collecting ticks to establish price-action baseline…</div>
+            <div class="conf-bar"><div class="conf-fill" id="confFill" style="width:0%"></div></div>
+          </div>
+
+          <div class="factors">
+            <div class="factor">
+              <div class="factor-name">Momentum run</div>
+              <div class="factor-val neu" id="fMomentum">0 ticks</div>
+            </div>
+            <div class="factor">
+              <div class="factor-name">Tick velocity</div>
+              <div class="factor-val neu" id="fVelocity">0.000/s</div>
+            </div>
+            <div class="factor">
+              <div class="factor-name">Micro structure</div>
+              <div class="factor-val neu" id="fStructure">flat</div>
+            </div>
+            <div class="factor">
+              <div class="factor-name">Rejection wick</div>
+              <div class="factor-val neu" id="fRejection">none</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">Session stats</div>
+            <button class="btn-reset-session" id="resetSessionBtn" type="button">Reset session</button>
+          </div>
+          <div class="stat-strip">
+            <div class="stat"><div class="stat-num" id="statTotal">0</div><div class="stat-lbl">Trades</div></div>
+            <div class="stat"><div class="stat-num pos" id="statWon">0</div><div class="stat-lbl">Won</div></div>
+            <div class="stat"><div class="stat-num neg" id="statLost">0</div><div class="stat-lbl">Lost</div></div>
+            <div class="stat"><div class="stat-num" id="statPnl">0.00</div><div class="stat-lbl">Net P/L</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: controls + log -->
+      <div>
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">Auto-trade controls</div></div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Auto-trading</div>
+              <div class="toggle-sub">Places Rise/Fall trades automatically on qualifying signals</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="autoToggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Alternator mode</div>
+              <div class="toggle-sub">Forces strict BUY → SELL → BUY → SELL alternation. A repeat-direction signal is blocked no matter how strong or how many filters agree — the EA waits for the opposite direction. Applies on top of every signal and filter.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="alternatorToggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="field-hint" id="alternatorHint" style="display:none;">Next required direction: <b id="alternatorNext">either (no trade yet this session)</b></div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Reverse mode</div>
+              <div class="toggle-sub">Flips the final decided direction right before placing the trade — a would-be BUY is placed as SELL, and a would-be SELL as BUY. Applied last, after every signal, filter, and the alternator gate.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="reverseToggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="field">
+            <label>Minimum signal strength to trade</label>
+            <div class="seg" id="strengthSeg">
+              <button data-v="low">Low+</button>
+              <button data-v="medium" class="active">Medium+</button>
+              <button data-v="high">High only</button>
+            </div>
+            <div class="field-hint">Only signals at or above this strength will trigger an auto-trade.</div>
+          </div>
+
+          <div class="field">
+            <label>Entry confirmation filters</label>
+            <div class="filter-list" id="filterList">
+              <label class="filter-item" data-filter="hhhl">
+                <input type="checkbox" id="filterHhHl">
+                <div class="filter-item-body">
+                  <div class="filter-item-title">HH / HL (uptrend) — LL / LH for sell</div>
+                  <div class="filter-item-sub">Requires the strict "HH / HL (uptrend)" structure label for BUY, or "LL / LH (downtrend)" for SELL.</div>
+                </div>
+              </label>
+              <label class="filter-item" data-filter="lowerRejection">
+                <input type="checkbox" id="filterLowerRejection">
+                <div class="filter-item-body">
+                  <div class="filter-item-title">Lower rejection — upper rejection for sell</div>
+                  <div class="filter-item-sub">Requires specifically a "lower rejection" for BUY, or an "upper rejection" for SELL.</div>
+                </div>
+              </label>
+            </div>
+            <div class="field-hint">Select any combination — or none. Every filter you check must be satisfied at the moment of the signal, or the auto-trade is rejected. Leave all unchecked to trade on signal strength alone.</div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>Stake per trade (USD)</label>
+              <div class="num-field"><input type="number" id="stakeInput" value="1" min="0.35" step="0.5"></div>
+            </div>
+            <div class="field">
+              <label>Contract duration</label>
+              <div class="row" style="gap:8px;">
+                <div class="num-field" style="flex:0 0 78px;"><input type="number" id="durationValueInput" value="5" min="1" step="1"></div>
+                <select class="sym-select" id="durationUnitSelect" style="flex:1; width:100%">
+                  <option value="t" selected>Tick(s)</option>
+                  <option value="s">Second(s)</option>
+                  <option value="m">Minute(s)</option>
+                </select>
+              </div>
+              <div class="field-hint" id="durationHint">5 ticks</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>Daily loss limit (USD)</label>
+              <div class="num-field"><input type="number" id="lossLimitInput" value="20" min="0" step="1"></div>
+            </div>
+            <div class="field">
+              <label>Daily profit target (USD)</label>
+              <div class="num-field"><input type="number" id="profitTargetInput" value="0" min="0" step="1"></div>
+            </div>
+          </div>
+          <div class="field-hint" style="margin-top:-8px;">Set target to 0 to disable it. Auto-trading stops itself when either limit is hit — no martingale, no stake recovery, flat stake every trade.</div>
+
+          <div class="toggle-row" style="margin-top:6px; padding-top:10px; border-top:1px solid var(--line-soft);">
+            <div>
+              <div class="toggle-label">Waiting-timer mode</div>
+              <div class="toggle-sub">When session profit hits the cycle target below, the EA pauses, wipes stats/log, counts down, then resumes — on repeat. The daily target tracks total profit across every cycle and stops the EA for good once reached.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="waitTimerToggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>Cycle profit target (USD)</label>
+              <div class="num-field"><input type="number" id="cycleTargetInput" value="5" min="0" step="0.5"></div>
+            </div>
+            <div class="field">
+              <label>Countdown before resume</label>
+              <div class="row" style="gap:8px;">
+                <div class="num-field" style="flex:1;"><input type="number" id="cycleWaitHourInput" value="0" min="0" step="1" placeholder="hr"></div>
+                <div class="num-field" style="flex:1;"><input type="number" id="cycleWaitMinInput" value="5" min="0" step="1" placeholder="min"></div>
+              </div>
+              <div class="field-hint" id="cycleWaitHint">5 minutes</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Daily target — accumulated across all cycles (USD)</label>
+            <div class="num-field"><input type="number" id="dailyCycleTargetInput" value="0" min="0" step="1"></div>
+            <div class="field-hint">Set to 0 to disable. Once total accumulated profit reaches this, the EA stops trading completely — the cycle ends.</div>
+          </div>
+
+          <div class="cycle-status" id="cycleStatus" style="display:none;"></div>
+
+          <div class="field">
+            <label>Cooldown between trades</label>
+            <select class="sym-select" id="cooldownSelect" style="width:100%">
+              <option value="0">No cooldown</option>
+              <option value="15" selected>15 seconds</option>
+              <option value="30">30 seconds</option>
+              <option value="60">60 seconds</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">Trade log</div>
+          </div>
+          <div class="log" id="tradeLog">
+            <div class="log-empty">No trades yet this session.</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <button class="btn btn-danger-ghost" style="width:100%" id="disconnectBtn">Disconnect &amp; end session</button>
+          <div class="footer-note">
+            Signals are generated from raw tick price action only — no indicators. This is not financial advice; synthetic indices carry full risk of loss. Demo-test thoroughly before using a real-money token.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ===================== STATE ===================== */
+  const state = {
+    ws: null,
+    connected: false,
+    authorized: false,
+    appId: "",       // Deriv-App-ID header — required for the new Options API, no shared test id anymore
+    accountId: "",    // e.g. "DOT90004580", resolved from /accounts before requesting an OTP
+    environment: "demo", // "demo" | "real" — selects /ws/demo or /ws/real
+    symbol: "R_75",
+    ticks: [],            // {price, epoch}
+    maxTicks: 300,
+    lastReqId: 1,
+    pending: {},           // req_id -> handler
+    autoTrade: false,
+    minStrength: "medium", // low | medium | high
+    filters: {              // entry confirmation filters — all checked ones must pass or the trade is rejected
+      hhhl: false,
+      lowerRejection: false
+    },
+    alternatorMode: false,   // when on, forces strict BUY/SELL alternation regardless of signal/filters
+    lastTradeDir: 0,         // direction (1/-1) of the last trade actually placed; 0 = none yet this session
+    reverseMode: false,      // when on, flips the final decided direction (BUY->SELL, SELL->BUY) right before placing
+    stake: 1,
+    durationValue: 5,
+    durationUnit: "t", // t = ticks, s = seconds, m = minutes
+    cooldown: 15,
+    lastTradeTime: 0,
+    watchdogGraceMs: 2000, // extra buffer added on top of the contract's own duration before it's force-cleared
+    dailyPnl: 0,
+    lossLimit: 20,
+    profitTarget: 0,
+    tradesTotal: 0,
+    tradesWon: 0,
+    tradesLost: 0,
+    openContracts: {},     // contract_id -> log row element ref
+    contractMeta: {},      // contract_id -> { deadline, sellAttempted, forceCleared } — used by the watchdog
+    tradeInFlight: false,  // gate: true from the moment a trade is requested until it settles/fails
+    haltReason: null,
+    accountCurrency: "USD",
+    accountBalance: null,
+    pipSize: 0.001,
+    manualDisconnect: false,
+    reconnectDelay: 2000,     // starts at 2s, doubles up to reconnectMaxDelay
+    reconnectMaxDelay: 30000,
+    reconnectTimer: null,
+
+    // ── Waiting-timer mode ──────────────────────────────────────────────
+    waitTimerMode: false,     // master switch for the cycle feature
+    cycleTarget: 5,           // profit (USD) that ends the current cycle and starts the countdown
+    cycleWaitHour: 0,
+    cycleWaitMin: 5,
+    dailyCycleTarget: 0,      // 0 = disabled. Total accumulated profit across all cycles that stops the EA for good
+    cycleAccumPnl: 0,         // running total across every completed cycle, survives per-cycle stat resets
+    cyclePaused: false,       // true while the countdown is running (trading paused, not toggled off)
+    cycleCountdownEndsAt: 0,  // epoch ms
+    cycleCountdownHandle: null,
+    cycleFinished: false,     // true once the daily cycle target has been reached — hard stop, no more cycles
+  };
+
+  /* ===================== DOM ===================== */
+  const $ = id => document.getElementById(id);
+  const connPanel = $("connPanel"), dashEl = $("dash"), lockNote = $("lockNote");
+  const connDot = $("connDot"), connText = $("connText"), connPill = $("connPill"), sessionTimerEl = $("sessionTimer");
+  const balancePill = $("balancePill");
+  const gateError = $("gateError");
+  const tokenInput = $("tokenInput"), envSelect = $("envSelect"), appIdInput = $("appIdInput");
+  const connectBtn = $("connectBtn"), disconnectBtn = $("disconnectBtn");
+  const symbolSelect = $("symbolSelect");
+  const priceMain = $("priceMain"), priceDelta = $("priceDelta"), priceMeta = $("priceMeta");
+  const tapeEl = $("tape");
+  const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
+  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection");
+  const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
+  const alternatorToggle = $("alternatorToggle"), alternatorHint = $("alternatorHint"), alternatorNext = $("alternatorNext");
+  const reverseToggle = $("reverseToggle");
+  const filterHhHl = $("filterHhHl"), filterLowerRejection = $("filterLowerRejection");
+  const filterCheckboxes = {
+    hhhl: filterHhHl,
+    lowerRejection: filterLowerRejection
+  };
+  const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
+  const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
+  const waitTimerToggle = $("waitTimerToggle"), cycleTargetInput = $("cycleTargetInput");
+  const cycleWaitHourInput = $("cycleWaitHourInput"), cycleWaitMinInput = $("cycleWaitMinInput"), cycleWaitHint = $("cycleWaitHint");
+  const dailyCycleTargetInput = $("dailyCycleTargetInput"), cycleStatus = $("cycleStatus");
+  const statTotal = $("statTotal"), statWon = $("statWon"), statLost = $("statLost"), statPnl = $("statPnl");
+  const resetSessionBtn = $("resetSessionBtn");
+  const tradeLog = $("tradeLog");
+  const masterFlag = $("masterFlag"), masterDot = $("masterDot"), masterText = $("masterText"), masterSub = $("masterSub");
+
+  /* ===================== CONNECTION ===================== */
+  function setConn(mode, label){
+    connDot.className = "dot " + mode;
+    connText.textContent = label;
+  }
+
+  // Deriv retired the Legacy WebSocket API (wss://ws.derivws.com/websockets/v3 + {authorize: token}).
+  // The new Options API splits this into three REST/WS steps:
+  //   1. GET  /trading/v1/options/accounts            -> find the account_id for the chosen environment
+  //   2. POST /trading/v1/options/accounts/{id}/otp    -> exchange the bearer token for a one-time-use WS URL
+  //   3. new WebSocket(that url)                       -> already authenticated; no `authorize` message needed
+  const REST_BASE = "https://api.derivws.com/trading/v1/options";
+
+  async function connect(){
+    const token = tokenInput.value.trim();
+    const appId = (appIdInput && appIdInput.value.trim()) || "";
+    state.environment = envSelect.value || "demo";
+
+    if(!token){
+      showGateError("Enter your Deriv access token first.");
+      return;
+    }
+    if(!appId){
+      showGateError("Enter your app_id — the new API requires a Deriv-App-ID header on every request.");
+      return;
+    }
+    state.appId = appId;
+    state.manualDisconnect = false;
+    clearReconnectTimer();
+    state.reconnectDelay = 2000;
+
+    await establishConnection(token, appId, { showBusyUi: true });
+  }
+
+  // Core connect routine shared by the manual "Connect" button and the
+  // auto-reconnect scheduler. Always redoes the REST -> OTP -> WS handshake
+  // since OTP URLs are single-use/short-lived and can't just be reopened.
+  async function establishConnection(token, appId, opts){
+    opts = opts || {};
+    if(opts.showBusyUi){
+      gateError.style.display = "none";
+      connectBtn.disabled = true;
+      connectBtn.textContent = "Connecting…";
+    }
+    setConn("wait", opts.reconnecting ? "reconnecting…" : "resolving account…");
+
+    try{
+      const account = await resolveAccount(token, appId, state.environment);
+      setConn("wait", "requesting session…");
+      const wsUrl = await requestOtpUrl(token, appId, account.account_id);
+      openSocket(wsUrl);
+      savePersisted();
+    }catch(err){
+      showGateError(err.message || "Could not connect to Deriv.");
+      resetConnectBtn();
+      setConn("err", "auth failed");
+      resetSessionTimer();
+      scheduleReconnect();
+    }
+  }
+
+  function clearReconnectTimer(){
+    if(state.reconnectTimer){ clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
+  }
+
+  // Schedules a reconnect attempt with exponential backoff (2s, 4s, 8s ... capped
+  // at 30s). Skipped entirely if the user hit Disconnect on purpose, or if there's
+  // no saved token/appId to reconnect with.
+  function scheduleReconnect(){
+    if(state.manualDisconnect) return;
+    clearReconnectTimer();
+    const token = tokenInput.value.trim();
+    const appId = (appIdInput && appIdInput.value.trim()) || "";
+    if(!token || !appId) return;
+
+    const delay = state.reconnectDelay;
+    setConn("wait", "reconnecting in " + Math.round(delay/1000) + "s…");
+    state.reconnectTimer = setTimeout(function(){
+      state.reconnectTimer = null;
+      if(state.manualDisconnect) return;
+      establishConnection(token, appId, { showBusyUi: false, reconnecting: true });
+    }, delay);
+    state.reconnectDelay = Math.min(state.reconnectDelay * 2, state.reconnectMaxDelay);
+  }
+
+  async function derivFetch(path, token, appId, options){
+    options = options || {};
+    const res = await fetch(REST_BASE + path, {
+      method: options.method || "GET",
+      headers: {
+        "Deriv-App-ID": appId,
+        "Authorization": "Bearer " + token,
+        ...(options.body ? { "Content-Type": "application/json" } : {})
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    let json;
+    try{ json = await res.json(); }catch(e){ json = null; }
+    if(!res.ok){
+      const message = (json && json.errors && json.errors[0] && json.errors[0].message)
+        || ("Request failed (" + res.status + ")");
+      throw new Error(message);
+    }
+    return json;
+  }
+
+  async function resolveAccount(token, appId, environment){
+    const json = await derivFetch("/accounts", token, appId);
+    const accounts = Array.isArray(json.data) ? json.data : (json.data ? [json.data] : []);
+    if(!accounts.length) throw new Error("No Options accounts found on this token.");
+    const wantVirtual = environment === "demo";
+    const match = accounts.find(a => Boolean(a.account_type === "demo") === wantVirtual)
+      || accounts[0];
+    return match;
+  }
+
+  async function requestOtpUrl(token, appId, accountId){
+    const json = await derivFetch("/accounts/" + encodeURIComponent(accountId) + "/otp", token, appId, { method: "POST" });
+    const url = json && json.data && json.data.url;
+    if(!url) throw new Error("OTP response did not include a WebSocket URL.");
+    return url;
+  }
+
+  // ── Keepalive: Deriv closes WebSocket sessions after ~60s of inactivity.
+  //    A plain main-thread setInterval gets throttled by the browser when the
+  //    tab is backgrounded (phone locked, other tab focused, minimized window),
+  //    which silently stops pings and lets the session die. The fix: run the
+  //    tick clock inside a Web Worker — worker timers are NOT subject to the
+  //    same background-tab throttling, so the ping cadence stays accurate
+  //    regardless of tab/screen focus state.
+  //
+  //    Layer 1 — ping every 10s (well within the ~60s server timeout)
+  //    Layer 2 — watchdog: if no message received in 90s, force-close so the
+  //               existing scheduleReconnect() logic fires immediately
+  //    Layer 3 — Page Visibility API (below) — reconnect any dropped socket
+  //               when the tab regains stable focus, as a safety net
+  //    Layer 4 — Web Locks wake-lock hint to discourage throttling entirely
+  const _tickerWorker = (() => {
+    const code = `
+      let id = null;
+      onmessage = (e) => {
+        if (e.data === 'start') {
+          if (id) clearInterval(id);
+          id = setInterval(() => postMessage('tick'), 1000);
+        } else if (e.data === 'stop') {
+          if (id) clearInterval(id);
+          id = null;
+        }
+      };
+    `;
+    // Fallback mimics the Worker interface using a plain setInterval, in case
+    // blob-URL Workers are blocked by CSP on some hosts. Still better than
+    // throwing and killing the whole script.
+    function fallback(){
+      console.warn("[Keepalive] Worker unavailable — falling back to main-thread timer (may still throttle in background tabs)");
+      const obj = { onmessage: null, postMessage: () => {} };
+      let id = null;
+      Object.defineProperty(obj, "_start", { value: () => {
+        if (id) clearInterval(id);
+        id = setInterval(() => { if (obj.onmessage) obj.onmessage(); }, 1000);
+      }});
+      obj._start();
+      return obj;
+    }
+    try{
+      const blob = new Blob([code], { type: "application/javascript" });
+      const worker = new Worker(URL.createObjectURL(blob));
+      worker.postMessage("start");
+      worker.onerror = () => console.warn("[Keepalive] Worker error — ping/watchdog may be degraded");
+      return worker;
+    }catch(e){
+      return fallback();
+    }
+  })();
+
+  const _keepalive = { sock: null, lastRx: 0, pingAccum: 0, watchAccum: 0, active: false };
+
+  _tickerWorker.onmessage = () => {
+    if(!_keepalive.active || !_keepalive.sock) return;
+    _keepalive.pingAccum += 1000;
+    _keepalive.watchAccum += 1000;
+
+    if(_keepalive.pingAccum >= 10000){
+      _keepalive.pingAccum = 0;
+      if(_keepalive.sock.readyState === WebSocket.OPEN){
+        _keepalive.sock.send(JSON.stringify({ ping: 1, req_id: 9999 }));
+      }
+    }
+
+    if(_keepalive.watchAccum >= 25000){
+      _keepalive.watchAccum = 0;
+      if(Date.now() - _keepalive.lastRx > 90000){
+        console.warn("[Keepalive] socket silent for >90s — forcing reconnect");
+        try{ _keepalive.sock.close(1000, "keepalive watchdog"); }catch(e){}
+      }
+    }
+
+    checkPositionWatchdog();
+  };
+
+  // ── Position watchdog — runs silently once per second off the same
+  //    throttle-resistant worker tick used for keepalive. Every open contract
+  //    got a deadline stamped on it at buy time (duration + small grace
+  //    buffer). If a contract is still open past its own deadline, it's
+  //    stuck — try to force it closed with a market sell.
+  //
+  //    IMPORTANT: many fixed-duration contract types (most Rise/Fall
+  //    contracts included) cannot be sold early at all — Deriv rejects the
+  //    sell outright and the contract only ever resolves naturally via the
+  //    proposal_open_contract stream at real expiry. So the sell is only the
+  //    first attempt, not the only one:
+  //      1. Try a market sell (works for contract types that allow it).
+  //      2. If Deriv rejects it, re-request proposal_open_contract instead —
+  //         this is harmless and lets the natural settlement message (which
+  //         still arrives at real expiry) clean everything up as normal.
+  //      3. If nothing has settled it by a longer hard ceiling, force-clear
+  //         the *local* UI/gate state directly so a contract Deriv refuses
+  //         to sell can never again leave the log stuck on "open" or block
+  //         new trades — even though the position itself keeps running
+  //         server-side until its real expiry.
+  //    No UI log spam either way — a stuck contract produces at most one
+  //    quiet console note, never a repeated one.
+  function checkPositionWatchdog(){
+    if(typeof state === "undefined" || !state.ws || state.ws.readyState !== 1) return;
+    const now = Date.now();
+    for(const contractId in state.contractMeta){
+      const meta = state.contractMeta[contractId];
+      if(!meta || meta.forceCleared) continue;
+
+      if(!meta.sellAttempted && now >= meta.deadline){
+        meta.sellAttempted = true;
+        const cid = parseInt(contractId, 10);
+        send({ sell: cid, price: 0 }, function(reply){
+          if(reply && reply.error){
+            // Not sellable early (expected for most fixed-duration contracts) —
+            // fall back to re-polling status so natural settlement can still
+            // clean it up through the normal onOpenContract path.
+            console.debug("[TICKFRAME] Watchdog: contract #" + cid + " not sellable early (" + reply.error.message + ") — waiting on natural settlement.");
+            send({ proposal_open_contract: 1, contract_id: cid, subscribe: 1 });
+          }
+        });
+        continue;
+      }
+
+      // Hard ceiling: if it's still open well past the deadline (sell was
+      // rejected and natural settlement still hasn't arrived, e.g. a dropped
+      // subscription), stop waiting on the server and clear local state so
+      // the gate and log row don't stay stuck forever.
+      if(meta.sellAttempted && now >= meta.deadline + 15000){
+        meta.forceCleared = true;
+        const rowId = state.openContracts[contractId];
+        if(rowId) updateLogRow(rowId, "cleared locally (watchdog timeout)", "lost");
+        delete state.openContracts[contractId];
+        delete state.contractMeta[contractId];
+        state.tradeInFlight = false;
+        updateMasterFlag();
+        console.debug("[TICKFRAME] Watchdog: force-cleared stuck contract #" + contractId + " locally after timeout.");
+      }
+    }
+  }
+
+  function startKeepalive(sock){
+    stopKeepalive();
+    _keepalive.sock = sock;
+    _keepalive.lastRx = Date.now();
+    _keepalive.pingAccum = 0;
+    _keepalive.watchAccum = 0;
+    _keepalive.active = true;
+
+    // Patch onmessage to track lastRx on every incoming frame (including pong replies)
+    const origMsg = sock.onmessage;
+    sock.onmessage = (e) => {
+      _keepalive.lastRx = Date.now();
+      if(origMsg) origMsg(e);
+    };
+  }
+
+  function stopKeepalive(){
+    _keepalive.active = false;
+    _keepalive.sock = null;
+  }
+
+  // Layer 4 — Web Locks wake-lock hint: signal the browser this tab has active
+  // background work, discouraging aggressive timer throttling. Falls back
+  // silently if the Web Locks API is unavailable.
+  (function requestWakeLock(){
+    if(!navigator.locks) return;
+    function acquireLock(){
+      navigator.locks.request("tickframe_keepalive", { mode: "shared" }, async () => {
+        await new Promise(r => setTimeout(r, 25000));
+      }).then(() => {
+        acquireLock(); // lock released after 25s — immediately re-acquire to stay continuous
+      }).catch(() => {});
+    }
+    acquireLock();
+  })();
+
+  function openSocket(url){
+    let socket;
+    try{
+      socket = new WebSocket(url);
+    }catch(e){
+      showGateError("Could not open WebSocket: " + e.message);
+      resetConnectBtn();
+      return;
+    }
+    state.ws = socket;
+
+    socket.onopen = function(){
+      state.connected = true;
+      state.authorized = true; // the OTP URL is pre-authenticated — no separate authorize step
+      state.reconnectDelay = 2000; // reset backoff after a successful connection
+      clearReconnectTimer();
+      startKeepalive(socket);
+      setConn("live", "live · " + state.environment);
+      setConnectBtnConnected();
+      startSessionTimer();
+      onAuthorized();
+    };
+
+    socket.onclose = function(){
+      state.connected = false;
+      state.authorized = false;
+      stopKeepalive();
+      resetConnectBtn();
+      resetSessionTimer();
+      if(state.manualDisconnect){
+        setConn("", "disconnected");
+      } else {
+        setConn("err", "disconnected");
+        scheduleReconnect();
+      }
+    };
+
+    socket.onerror = function(){
+      setConn("err", "connection error");
+      resetSessionTimer();
+      // onclose fires right after onerror for a failed socket, which will
+      // call scheduleReconnect() — nothing extra needed here.
+    };
+
+    socket.onmessage = function(evt){
+      let msg;
+      try{ msg = JSON.parse(evt.data); }catch(e){ return; }
+      handleMessage(msg);
+    };
+  }
+
+  function resetConnectBtn(){
+    connectBtn.disabled = false;
+    connectBtn.textContent = "Authorize & connect";
+    connectBtn.classList.remove("btn-connected");
+  }
+
+  // Called on a successful socket open — the button stays disabled (there's
+  // nothing to click while already connected) but must stop showing the
+  // "Connecting…" busy label, which otherwise sticks around forever since
+  // resetConnectBtn() is only ever called on the error/close paths.
+  function setConnectBtnConnected(){
+    connectBtn.disabled = true;
+    connectBtn.textContent = "Connected";
+    connectBtn.classList.add("btn-connected");
+  }
+
+  function showGateError(text){
+    gateError.style.display = "block";
+    gateError.textContent = text;
+  }
+
+  function send(payload, handler){
+    if(!state.ws || state.ws.readyState !== 1) return null;
+    const reqId = state.lastReqId++;
+    payload.req_id = reqId;
+    if(handler) state.pending[reqId] = handler;
+    state.ws.send(JSON.stringify(payload));
+    return reqId;
+  }
+
+  function handleMessage(msg){
+    if(msg.error){
+      handleApiError(msg);
+      return;
+    }
+
+    switch(msg.msg_type){
+      case "tick":
+        onTick(msg.tick);
+        break;
+      case "history":
+        onHistory(msg);
+        break;
+      case "proposal":
+        onProposal(msg);
+        break;
+      case "buy":
+        onBuy(msg);
+        break;
+      case "proposal_open_contract":
+        onOpenContract(msg.proposal_open_contract);
+        break;
+      case "balance":
+        onBalance(msg.balance);
+        break;
+    }
+
+    if(msg.req_id && state.pending[msg.req_id]){
+      try{ state.pending[msg.req_id](msg); }catch(e){}
+      delete state.pending[msg.req_id];
+    }
+  }
+
+  function handleApiError(msg){
+    const code = msg.error.code || "";
+    const message = msg.error.message || "Unknown API error";
+    if(!state.authorized){
+      showGateError(message);
+      resetConnectBtn();
+      setConn("err", "auth failed");
+      return;
+    }
+    // New API: OTP tokens are short-lived — an expired/invalid session on the socket
+    // means we need to re-run the accounts -> otp -> websocket flow from scratch.
+    if(code === "Unauthorized" || code === "ValidationError"){
+      setConn("err", "session expired");
+      logSystemNote("Session expired — click Authorize & connect to reconnect.");
+      disconnectSession();
+      return;
+    }
+    // Harmless — happens when we defensively re-request a proposal_open_contract
+    // subscription that's already active (e.g. the auto-trade-off safety net).
+    // Nothing went wrong; the existing subscription just keeps streaming.
+    if(code === "AlreadySubscribed" || code === "AlreadySubscribedOrLimit"){
+      console.debug("[TICKFRAME] " + message);
+      return;
+    }
+    logSystemNote(message);
+  }
+
+  function onAuthorized(){
+    connPanel.classList.add("connected");
+    dashEl.classList.remove("locked");
+    lockNote.classList.remove("show");
+    // subscribe to current symbol
+    subscribeSymbol(state.symbol);
+    // subscribe to account balance so the header stays live-updated
+    send({ balance: 1, subscribe: 1 });
+  }
+
+  function onBalance(balance){
+    if(!balance) return;
+    state.accountBalance = parseFloat(balance.balance);
+    if(balance.currency) state.accountCurrency = balance.currency;
+    renderBalance();
+  }
+
+  function renderBalance(){
+    if(state.accountBalance === null){
+      balancePill.style.display = "none";
+      return;
+    }
+    balancePill.style.display = "";
+    balancePill.textContent = state.accountBalance.toFixed(2) + " " + state.accountCurrency;
+  }
+
+  function disconnectSession(){
+    state.manualDisconnect = true;
+    clearReconnectTimer();
+    stopKeepalive();
+    if(state.ws) state.ws.close();
+    state.ws = null;
+    state.authorized = false;
+    dashEl.classList.add("locked");
+    lockNote.classList.add("show");
+    connPanel.classList.remove("connected");
+    resetConnectBtn();
+    setConn("", "disconnected");
+    state.ticks = [];
+    resetSessionTimer();
+    // Any trade in flight is now unmonitorable — clear the gate rather than
+    // leave auto-trading permanently jammed on the next connect.
+    state.tradeInFlight = false;
+    state.openContracts = {};
+    state.accountBalance = null;
+    renderBalance();
+  }
+
+  // Extra teardown for a deliberate, user-initiated disconnect (the "Disconnect
+  // & end session" button) — as opposed to an involuntary drop like an expired
+  // session, which reconnects automatically and shouldn't wipe the user's stats.
+  // Wipes stats/log/halt reason and forces auto-trading back OFF, so the EA
+  // never comes back from a fresh connect silently armed.
+  function endSessionManually(){
+    disconnectSession();
+    resetSession();
+    resetWaitTimerCycle();
+    if(state.autoTrade){
+      state.autoTrade = false;
+      autoToggle.checked = false;
+    }
+    updateMasterFlag();
+  }
+
+  /* ===================== MARKET DATA ===================== */
+  function subscribeSymbol(sym){
+    state.symbol = sym;
+    state.ticks = [];
+    tapeEl.innerHTML = "";
+    // stop any prior tick stream
+    send({ forget_all: "ticks" });
+    // pull recent history to seed the engine, then subscribe live
+    send({
+      ticks_history: sym,
+      adjust_start_time: 1,
+      count: 120,
+      end: "latest",
+      style: "ticks"
+    }, function(){
+      send({ ticks: sym, subscribe: 1 });
+    });
+  }
+
+  function onHistory(msg){
+    if(!msg.history) return;
+    const prices = msg.history.prices || [];
+    const times = msg.history.times || [];
+    state.ticks = prices.map((p,i) => ({ price: parseFloat(p), epoch: times[i] }));
+    renderTape();
+    evaluateSignal();
+  }
+
+  function onTick(tick){
+    const tickSymbol = tick.symbol;
+    if(tickSymbol !== state.symbol) return;
+    state.ticks.push({ price: parseFloat(tick.quote), epoch: tick.epoch });
+    if(state.ticks.length > state.maxTicks) state.ticks.shift();
+    if(tick.pip_size !== undefined) state.pipSize = Math.pow(10, -tick.pip_size);
+    renderPrice();
+    renderTape();
+    evaluateSignal();
+  }
+
+  function renderPrice(){
+    const n = state.ticks.length;
+    if(n === 0) return;
+    const last = state.ticks[n-1];
+    const prev = n > 1 ? state.ticks[n-2] : last;
+    const dp = decimalsForSymbol();
+    priceMain.textContent = last.price.toFixed(dp);
+    const delta = last.price - prev.price;
+    priceMain.className = "price-main " + (delta > 0 ? "up" : delta < 0 ? "down" : "");
+    priceDelta.className = "price-delta " + (delta > 0 ? "up" : delta < 0 ? "down" : "");
+    priceDelta.textContent = (delta > 0 ? "+" : "") + delta.toFixed(dp);
+    priceMeta.textContent = new Date(last.epoch * 1000).toLocaleTimeString() + " · " + n + " ticks buffered";
+  }
+
+  function decimalsForSymbol(){
+    // Step Indices (stpRNG, stpRNG2..5) quote to 2 decimals on Deriv
+    if(/^stpRNG/.test(state.symbol)) return 2;
+    // Deriv volatility indices commonly quote to 2-4 decimals depending on index
+    if(/100/.test(state.symbol)) return 2;
+    if(/75/.test(state.symbol)) return 3;
+    if(/50/.test(state.symbol)) return 4;
+    if(/25/.test(state.symbol)) return 3;
+    if(/10/.test(state.symbol)) return 3;
+    return 3;
+  }
+
+  function renderTape(){
+    const dp = decimalsForSymbol();
+    const recent = state.ticks.slice(-60);
+    if(recent.length < 2){ return; }
+    const vals = recent.map(t => t.price);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const span = (max - min) || (min * 0.0005) || 1;
+    tapeEl.innerHTML = "";
+    for(let i=1;i<recent.length;i++){
+      const cur = recent[i], prev = recent[i-1];
+      const h = Math.max(6, ((cur.price - min) / span) * 52);
+      const bar = document.createElement("div");
+      bar.className = "tape-bar " + (cur.price > prev.price ? "up" : cur.price < prev.price ? "down" : "");
+      bar.style.height = h + "px";
+      tapeEl.appendChild(bar);
+    }
+  }
+
+  /* ===================== PURE PRICE-ACTION SIGNAL ENGINE ===================== */
+  // No indicators. All factors derive directly from the raw tick sequence:
+  //  1. Momentum run: consecutive same-direction ticks (streak length + consistency)
+  //  2. Tick velocity: rate of price change per second over recent window
+  //  3. Micro market structure: rolling higher-highs/higher-lows or lower-highs/lower-lows
+  //  4. Rejection detection: sharp spike against the recent path that snaps back (wick-like behavior in ticks)
+
+  function evaluateSignal(){
+    const ticks = state.ticks;
+    if(ticks.length < 25){
+      sigLevelLabel.textContent = "NO SIGNAL";
+      sigDir.textContent = "— WARMING UP —";
+      sigDir.className = "signal-dir none";
+      sigConf.textContent = "Collecting ticks (" + ticks.length + "/25 minimum)…";
+      confFill.style.width = "0%";
+      confFill.style.background = "var(--wire)";
+      resetFactors();
+      return;
+    }
+
+    const window = ticks.slice(-40);
+    const prices = window.map(t => t.price);
+
+    // --- Factor 1: momentum run ---
+    let runLen = 0, runDir = 0;
+    for(let i = prices.length - 1; i > 0; i--){
+      const d = prices[i] - prices[i-1];
+      const dir = d > 0 ? 1 : d < 0 ? -1 : 0;
+      if(dir === 0) break;
+      if(runDir === 0) runDir = dir;
+      if(dir !== runDir) break;
+      runLen++;
+    }
+    const momentumScore = Math.min(runLen / 8, 1); // saturates at 8-tick run
+
+    // --- Factor 2: tick velocity (price change per second, normalized) ---
+    const first = window[0], last = window[window.length - 1];
+    const dt = Math.max(1, last.epoch - first.epoch);
+    const totalMove = last.price - first.price;
+    const velocity = totalMove / dt;
+    const avgAbsStep = avgAbsoluteStep(prices);
+    const velocityScore = avgAbsStep > 0 ? Math.min(Math.abs(velocity) / (avgAbsStep * 2), 1) : 0;
+    const velocityDir = velocity > 0 ? 1 : velocity < 0 ? -1 : 0;
+
+    // --- Factor 3: micro market structure (swing highs/lows) ---
+    const swings = findSwings(prices);
+    const structure = classifyStructure(swings);
+    const structureScore = structure.strength;
+    const structureDir = structure.dir;
+
+    // --- Factor 4: rejection / snap-back detection ---
+    const rejection = detectRejection(prices);
+
+    // --- Combine into weighted composite ---
+    // Base direction = majority vote among momentum, velocity, structure
+    const votes = [ [runDir, momentumScore*1.0], [velocityDir, velocityScore*0.9], [structureDir, structureScore*1.1] ];
+    let upWeight = 0, downWeight = 0;
+    votes.forEach(([d,w]) => { if(d>0) upWeight += w; else if(d<0) downWeight += w; });
+
+    let compositeDir = 0;
+    let compositeScore = 0;
+    if(upWeight === 0 && downWeight === 0){
+      compositeDir = 0; compositeScore = 0;
+    } else if(upWeight >= downWeight){
+      compositeDir = 1; compositeScore = upWeight / 3.0;
+    } else {
+      compositeDir = -1; compositeScore = downWeight / 3.0;
+    }
+
+    // Rejection can override or dampen: a fresh rejection against the composite
+    // direction lowers confidence sharply (price just got rejected at this level).
+    if(rejection.detected && rejection.dir === -compositeDir){
+      compositeScore *= 0.4;
+    } else if(rejection.detected && rejection.dir === compositeDir){
+      compositeScore = Math.min(1, compositeScore + 0.15);
+    }
+
+    compositeScore = Math.max(0, Math.min(1, compositeScore));
+
+    // Map to Low / Medium / High
+    let level = "none", levelLabel = "NO SIGNAL";
+    if(compositeScore >= 0.72){ level = "high"; levelLabel = "HIGH SIGNAL"; }
+    else if(compositeScore >= 0.45){ level = "medium"; levelLabel = "MEDIUM SIGNAL"; }
+    else if(compositeScore >= 0.22){ level = "low"; levelLabel = "LOW SIGNAL"; }
+    else { level = "none"; levelLabel = "NO SIGNAL"; compositeDir = 0; }
+
+    renderSignal(level, levelLabel, compositeDir, compositeScore);
+    renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection);
+
+    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection);
+  }
+
+  function avgAbsoluteStep(prices){
+    let sum = 0, n = 0;
+    for(let i=1;i<prices.length;i++){ sum += Math.abs(prices[i]-prices[i-1]); n++; }
+    return n ? sum/n : 0;
+  }
+
+  function findSwings(prices){
+    // simple fractal-style swing detection on raw ticks (no smoothing/indicator involved)
+    const swings = [];
+    for(let i=2;i<prices.length-2;i++){
+      const a=prices[i-2], b=prices[i-1], c=prices[i], d=prices[i+1], e=prices[i+2];
+      if(c > a && c > b && c > d && c > e) swings.push({ i, price:c, type:"H" });
+      else if(c < a && c < b && c < d && c < e) swings.push({ i, price:c, type:"L" });
+    }
+    return swings;
+  }
+
+  function classifyStructure(swings){
+    if(swings.length < 3) return { dir:0, strength:0, label:"flat" };
+    const highs = swings.filter(s=>s.type==="H").slice(-3);
+    const lows = swings.filter(s=>s.type==="L").slice(-3);
+    let hh=false, hl=false, lh=false, ll=false;
+    if(highs.length>=2) hh = highs[highs.length-1].price > highs[highs.length-2].price;
+    if(highs.length>=2) lh = highs[highs.length-1].price < highs[highs.length-2].price;
+    if(lows.length>=2) hl = lows[lows.length-1].price > lows[lows.length-2].price;
+    if(lows.length>=2) ll = lows[lows.length-1].price < lows[lows.length-2].price;
+
+    if(hh && hl) return { dir:1, strength:0.85, label:"HH / HL (uptrend)" };
+    if(ll && lh) return { dir:-1, strength:0.85, label:"LL / LH (downtrend)" };
+    if(hh) return { dir:1, strength:0.5, label:"higher highs" };
+    if(ll) return { dir:-1, strength:0.5, label:"lower lows" };
+    if(hl) return { dir:1, strength:0.35, label:"higher lows" };
+    if(lh) return { dir:-1, strength:0.35, label:"lower highs" };
+    return { dir:0, strength:0.15, label:"ranging" };
+  }
+
+  function detectRejection(prices){
+    // Look at the last 6 ticks for a spike beyond the local range that snaps back —
+    // the tick equivalent of a candle wick / rejection.
+    const n = prices.length;
+    if(n < 8) return { detected:false, dir:0 };
+    const recent = prices.slice(n-8, n-1);
+    const spikeIdx = n-2;
+    const localMin = Math.min(...recent);
+    const localMax = Math.max(...recent);
+    const spike = prices[spikeIdx];
+    const now = prices[n-1];
+    const range = (localMax - localMin) || 0.0000001;
+
+    if(spike >= localMax && (spike - now) > range * 0.35){
+      return { detected:true, dir:-1, label:"upper rejection" }; // rejected from a high -> bearish
+    }
+    if(spike <= localMin && (now - spike) > range * 0.35){
+      return { detected:true, dir:1, label:"lower rejection" }; // rejected from a low -> bullish
+    }
+    return { detected:false, dir:0, label:"none" };
+  }
+
+  function renderSignal(level, levelLabel, dir, score){
+    sigLevelLabel.textContent = levelLabel;
+    if(dir === 0 || level === "none"){
+      sigDir.textContent = "— NO EDGE —";
+      sigDir.className = "signal-dir none";
+      sigConf.textContent = "Price action is not showing a clear directional edge right now.";
+    } else {
+      sigDir.textContent = dir > 0 ? "▲ RISE" : "▼ FALL";
+      sigDir.className = "signal-dir " + (dir > 0 ? "rise" : "fall");
+      sigConf.textContent = "Composite confidence " + Math.round(score*100) + "% · " + level.toUpperCase() + " strength";
+    }
+    confFill.style.width = Math.round(score*100) + "%";
+    confFill.style.background = dir > 0 ? "var(--rise)" : dir < 0 ? "var(--fall)" : "var(--wire)";
+    state.currentSignal = { level, dir, score };
+  }
+
+  function resetFactors(){
+    fMomentum.textContent = "0 ticks"; fMomentum.className="factor-val neu";
+    fVelocity.textContent = "0.000/s"; fVelocity.className="factor-val neu";
+    fStructure.textContent = "flat"; fStructure.className="factor-val neu";
+    fRejection.textContent = "none"; fRejection.className="factor-val neu";
+  }
+
+  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection){
+    fMomentum.textContent = runLen + " tick" + (runLen===1?"":"s") + (runDir>0?" up":runDir<0?" down":"");
+    fMomentum.className = "factor-val " + (runDir>0?"pos":runDir<0?"neg":"neu");
+
+    fVelocity.textContent = (velocity>=0?"+":"") + velocity.toFixed(5) + "/s";
+    fVelocity.className = "factor-val " + (velocity>0?"pos":velocity<0?"neg":"neu");
+
+    fStructure.textContent = structure.label;
+    fStructure.className = "factor-val " + (structure.dir>0?"pos":structure.dir<0?"neg":"neu");
+
+    fRejection.textContent = rejection.detected ? rejection.label : "none";
+    fRejection.className = "factor-val " + (rejection.detected ? (rejection.dir>0?"pos":"neg") : "neu");
+  }
+
+  /* ===================== AUTO-TRADE ===================== */
+  const strengthRank = { none:0, low:1, medium:2, high:3 };
+
+  // Checks the user-selected entry confirmation filters against this signal's
+  // structure/rejection readouts. Returns { passed, reasons } — reasons lists
+  // any checked filter that failed, so the rejection can be logged clearly.
+  function checkEntryFilters(dir, structure, rejection){
+    const f = state.filters;
+    const reasons = [];
+
+    if(f.hhhl){
+      const wantLabel = dir > 0 ? "HH / HL (uptrend)" : "LL / LH (downtrend)";
+      if(structure.label !== wantLabel) reasons.push((dir>0 ? "HH/HL" : "LL/LH") + " structure not present (got: " + structure.label + ")");
+    }
+    if(f.lowerRejection){
+      const wantLabel = dir > 0 ? "lower rejection" : "upper rejection";
+      if(!rejection.detected || rejection.label !== wantLabel) reasons.push((dir>0 ? "Lower" : "Upper") + " rejection not present (got: " + (rejection.detected ? rejection.label : "none") + ")");
+    }
+
+    return { passed: reasons.length === 0, reasons };
+  }
+
+  function maybeAutoTrade(level, dir, score, structure, rejection){
+    if(!state.autoTrade) return;
+    if(dir === 0 || level === "none") return;
+    if(state.haltReason) return;
+    if(state.tradeInFlight) return; // gatekeeper: never stack a second trade while one is open
+    if(state.cyclePaused) return;   // waiting-timer countdown in progress — no trades until it resumes
+    if(state.cycleFinished) return; // daily cycle target already reached — hard stop for the day
+
+    if(strengthRank[level] < strengthRank[state.minStrength]) return;
+
+    const gate = checkEntryFilters(dir, structure, rejection);
+    if(!gate.passed){
+      // Filter rejections are expected/frequent (a filtered signal fires far more
+      // often than it passes) — block silently rather than flooding the trade log.
+      // Visible in console for debugging without cluttering the user-facing log.
+      console.debug("[TICKFRAME] Signal rejected by filter — " + gate.reasons.join("; "));
+      return;
+    }
+
+    const now = Date.now();
+    if(now - state.lastTradeTime < state.cooldown*1000) return;
+
+    // daily limits
+    if(state.lossLimit > 0 && state.dailyPnl <= -Math.abs(state.lossLimit)){
+      haltAutoTrade("Daily loss limit reached (" + state.dailyPnl.toFixed(2) + " " + state.accountCurrency + ")");
+      return;
+    }
+    if(state.profitTarget > 0 && state.dailyPnl >= state.profitTarget){
+      haltAutoTrade("Daily profit target reached (" + state.dailyPnl.toFixed(2) + " " + state.accountCurrency + ")");
+      return;
+    }
+
+    // ── ALTERNATOR GATE ──────────────────────────────────────────────────
+    // Hard override, checked last, after every other signal/filter has already
+    // passed. If alternator mode is on and this signal's direction is the same
+    // as the last trade actually placed, the trade is blocked — no exceptions,
+    // regardless of signal strength or how many filters agree. The EA simply
+    // waits for a signal in the opposite direction. This runs on top of every
+    // signal type and every filter combination; it never loosens them.
+    if(state.alternatorMode && state.lastTradeDir !== 0 && dir === state.lastTradeDir){
+      console.debug("[TICKFRAME] Alternator gate blocked repeat-direction signal (" + (dir>0?"BUY":"SELL") + ") — waiting for " + (dir>0?"SELL":"BUY"));
+      return;
+    }
+
+    // ── REVERSE MODE ─────────────────────────────────────────────────────
+    // Applied last, after every signal, filter, and the alternator gate have
+    // already settled on a final direction. Simply flips that final call:
+    // a would-be BUY is placed as SELL, and vice versa. Because this runs
+    // after the alternator check, the alternator still gates on the engine's
+    // original (pre-flip) direction — reverse mode only changes what actually
+    // gets traded and fed back into lastTradeDir, not what the alternator
+    // is watching for.
+    const finalDir = state.reverseMode ? -dir : dir;
+
+    state.lastTradeTime = now;
+    if(state.alternatorMode) state.lastTradeDir = dir;
+    updateAlternatorHint();
+    placeTrade(finalDir, level, score);
+  }
+
+  function haltAutoTrade(reason){
+    state.haltReason = reason;
+    state.autoTrade = false;
+    autoToggle.checked = false;
+    updateMasterFlag();
+    logSystemNote("Auto-trading stopped: " + reason);
+  }
+
+  /* ===================== WAITING-TIMER MODE ===================== */
+  // Independent of the daily loss-limit / profit-target pair above. Runs a
+  // repeating cycle: trade → hit cycle profit target → pause + wipe stats/log
+  // → countdown → resume → repeat. A separate accumulator tracks total profit
+  // across every cycle; once that crosses the daily target the EA stops for
+  // good (this is the only exit from the loop).
+  //
+  // Checked right after a contract settles (see onOpenContract), using the
+  // same dailyPnl the existing daily limit pair already watches — so it only
+  // ever evaluates once per settlement, never on a timer, never spamming.
+  function checkWaitTimerCycle(){
+    if(!state.waitTimerMode || state.cyclePaused || state.cycleFinished) return;
+    if(state.haltReason) return; // a hard daily loss/profit halt already stopped things — don't also cycle
+    if(state.cycleTarget <= 0) return;
+    if(state.dailyPnl < state.cycleTarget) return;
+
+    state.cycleAccumPnl += state.dailyPnl;
+    renderCycleStatus();
+
+    if(state.dailyCycleTarget > 0 && state.cycleAccumPnl >= state.dailyCycleTarget){
+      state.cycleFinished = true;
+      state.autoTrade = false;
+      autoToggle.checked = false;
+      state.haltReason = "Daily target reached (" + state.cycleAccumPnl.toFixed(2) + " " + state.accountCurrency + ") — waiting-timer cycle complete";
+      updateMasterFlag();
+      logSystemNote("Daily target reached — " + state.cycleAccumPnl.toFixed(2) + " " + state.accountCurrency + " accumulated. EA stopped for the day.");
+      renderCycleStatus();
+      return;
+    }
+
+    startCycleCountdown();
+  }
+
+  function startCycleCountdown(){
+    state.cyclePaused = true;
+    resetSession(); // wipes stats + log for the new cycle, per spec — accumulator above is untouched
+    updateMasterFlag();
+
+    const waitMs = (Math.max(0, state.cycleWaitHour) * 3600 + Math.max(0, state.cycleWaitMin) * 60) * 1000;
+    state.cycleCountdownEndsAt = Date.now() + waitMs;
+    renderCycleStatus();
+
+    if(state.cycleCountdownHandle) clearInterval(state.cycleCountdownHandle);
+    state.cycleCountdownHandle = setInterval(function(){
+      if(Date.now() >= state.cycleCountdownEndsAt){
+        clearInterval(state.cycleCountdownHandle);
+        state.cycleCountdownHandle = null;
+        state.cyclePaused = false;
+        updateMasterFlag();
+        renderCycleStatus();
+      } else {
+        renderCycleStatus();
+      }
+    }, 1000);
+  }
+
+  function formatCountdown(ms){
+    const totalSec = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    const pad = n => String(n).padStart(2, "0");
+    return h > 0 ? (h + ":" + pad(m) + ":" + pad(s)) : (pad(m) + ":" + pad(s));
+  }
+
+  function renderCycleStatus(){
+    if(!state.waitTimerMode){
+      cycleStatus.style.display = "none";
+      return;
+    }
+    cycleStatus.style.display = "";
+    cycleStatus.classList.toggle("done", state.cycleFinished);
+
+    if(state.cycleFinished){
+      cycleStatus.innerHTML = "<b>Cycle complete.</b> Accumulated <b>" + state.cycleAccumPnl.toFixed(2) + " " + state.accountCurrency + "</b> — daily target reached, EA stopped.";
+    } else if(state.cyclePaused){
+      const remaining = state.cycleCountdownEndsAt - Date.now();
+      cycleStatus.innerHTML = "Paused — resumes in <span class=\"cd\">" + formatCountdown(remaining) + "</span> · accumulated so far: <b>" + state.cycleAccumPnl.toFixed(2) + " " + state.accountCurrency + "</b>";
+    } else {
+      const remainingToTarget = Math.max(0, state.cycleTarget - state.dailyPnl);
+      cycleStatus.innerHTML = "Running · " + remainingToTarget.toFixed(2) + " " + state.accountCurrency + " to next cycle target · accumulated: <b>" + state.cycleAccumPnl.toFixed(2) + " " + state.accountCurrency + "</b>" +
+        (state.dailyCycleTarget > 0 ? " / " + state.dailyCycleTarget.toFixed(2) + " " + state.accountCurrency + " daily" : "");
+    }
+  }
+
+  function resetWaitTimerCycle(){
+    if(state.cycleCountdownHandle){ clearInterval(state.cycleCountdownHandle); state.cycleCountdownHandle = null; }
+    state.cyclePaused = false;
+    state.cycleFinished = false;
+    state.cycleAccumPnl = 0;
+    state.cycleCountdownEndsAt = 0;
+    renderCycleStatus();
+  }
+
+  function parseDuration(){
+    // Deriv duration_unit codes: t=ticks, s=seconds, m=minutes
+    const val = parseInt(durationValueInput.value, 10) || 1;
+    const unit = durationUnitSelect.value || "t";
+    return { duration: val, duration_unit: unit };
+  }
+
+  // Turns a Deriv duration/duration_unit into a wall-clock deadline (epoch ms)
+  // after which a still-open contract is considered stuck and force-cleared.
+  // s/m map directly to real time. t (ticks) has no fixed wall-clock length,
+  // so a generous per-tick ceiling is used — wide enough to never cut a
+  // genuinely-running trade short, but still bounded so a frozen feed can't
+  // leave a position open forever.
+  function estimateContractDeadline(duration, unit){
+    let ms;
+    if(unit === "s") ms = duration * 1000;
+    else if(unit === "m") ms = duration * 60 * 1000;
+    else ms = duration * 3000; // ticks — assume up to ~3s/tick ceiling
+    return Date.now() + ms + state.watchdogGraceMs;
+  }
+
+  function updateDurationHint(){
+    const val = parseInt(durationValueInput.value, 10) || 1;
+    const unitLabel = { t: "tick", s: "second", m: "minute" }[durationUnitSelect.value] || "tick";
+    durationHint.textContent = val + " " + unitLabel + (val === 1 ? "" : "s");
+  }
+
+  function updateCycleWaitHint(){
+    const h = Math.max(0, parseInt(cycleWaitHourInput.value, 10) || 0);
+    const m = Math.max(0, parseInt(cycleWaitMinInput.value, 10) || 0);
+    const parts = [];
+    if(h > 0) parts.push(h + " hour" + (h === 1 ? "" : "s"));
+    if(m > 0 || h === 0) parts.push(m + " minute" + (m === 1 ? "" : "s"));
+    cycleWaitHint.textContent = parts.join(" ");
+  }
+
+  function placeTrade(dir, level, score){
+    state.tradeInFlight = true; // lock immediately — cleared on failure below, or on settlement in onOpenContract
+    updateMasterFlag();
+
+    const contractType = dir > 0 ? "CALL" : "PUT";
+    const { duration, duration_unit } = parseDuration();
+    const stake = parseFloat(stakeInput.value) || 1;
+
+    const proposalReq = {
+      proposal: 1,
+      amount: stake,
+      basis: "stake",
+      contract_type: contractType,
+      currency: state.accountCurrency,
+      duration: duration,
+      duration_unit: duration_unit,
+      underlying_symbol: state.symbol
+    };
+
+    const rowId = "row_" + Date.now();
+    addLogRow(rowId, dir, level, score, "requesting…", "open");
+
+    send({ proposal: 1, ...proposalReq }, function(msg){
+      if(msg.error){
+        updateLogRow(rowId, "rejected: " + msg.error.message, "lost");
+        state.tradeInFlight = false;
+        updateMasterFlag();
+        return;
+      }
+      const proposalId = msg.proposal.id;
+      const price = msg.proposal.ask_price;
+      send({ buy: proposalId, price: price }, function(buyMsg){
+        if(buyMsg.error){
+          updateLogRow(rowId, "buy failed: " + buyMsg.error.message, "lost");
+          state.tradeInFlight = false;
+          updateMasterFlag();
+          return;
+        }
+        const contractId = buyMsg.buy.contract_id;
+        state.openContracts[contractId] = rowId;
+        state.contractMeta[contractId] = { deadline: estimateContractDeadline(duration, duration_unit), sellAttempted: false, forceCleared: false };
+        state.tradesTotal++;
+        updateStats();
+        updateLogRow(rowId, "open · contract #" + contractId, "open");
+        send({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 });
+      });
+    });
+  }
+
+  function onProposal(msg){ /* handled via callback above */ }
+  function onBuy(msg){ /* handled via callback above */ }
+
+  function onOpenContract(poc){
+    if(!poc || !poc.contract_id) return;
+    const rowId = state.openContracts[poc.contract_id];
+    if(!rowId) return;
+
+    if(poc.is_sold){
+      const profit = parseFloat(poc.profit || 0);
+      state.dailyPnl += profit;
+      if(profit > 0){ state.tradesWon++; updateLogRow(rowId, formatPnl(profit) + " " + state.accountCurrency, "won"); }
+      else { state.tradesLost++; updateLogRow(rowId, formatPnl(profit) + " " + state.accountCurrency, "lost"); }
+      updateStats();
+      delete state.openContracts[poc.contract_id];
+      delete state.contractMeta[poc.contract_id];
+      state.tradeInFlight = false; // gate released — next signal may now trade
+      updateMasterFlag();
+
+      // re-check limits after settlement
+      if(state.autoTrade){
+        if(state.lossLimit > 0 && state.dailyPnl <= -Math.abs(state.lossLimit)){
+          haltAutoTrade("Daily loss limit reached (" + state.dailyPnl.toFixed(2) + " " + state.accountCurrency + ")");
+        } else if(state.profitTarget > 0 && state.dailyPnl >= state.profitTarget){
+          haltAutoTrade("Daily profit target reached (" + state.dailyPnl.toFixed(2) + " " + state.accountCurrency + ")");
+        }
+      }
+      checkWaitTimerCycle();
+    }
+  }
+
+  function formatPnl(v){ return (v>=0?"+":"") + v.toFixed(2); }
+
+  /* ===================== LOG / STATS UI ===================== */
+  function symbolLabel(sym){
+    const opt = symbolSelect.querySelector('option[value="' + sym + '"]');
+    return opt ? opt.textContent : sym;
+  }
+
+  function addLogRow(id, dir, level, score, statusText, statusClass){
+    if(tradeLog.querySelector(".log-empty")) tradeLog.innerHTML = "";
+    const row = document.createElement("div");
+    row.className = "log-row";
+    row.id = id;
+    const time = new Date().toLocaleTimeString();
+    row.innerHTML =
+      '<div class="log-time">'+time+'</div>' +
+      '<div class="log-dir '+(dir>0?"rise":"fall")+'">'+(dir>0?"RISE":"FALL")+'</div>' +
+      '<div class="log-desc"><span class="log-market">'+symbolLabel(state.symbol)+'</span> · '+level.toUpperCase()+' · '+Math.round(score*100)+'% · <span class="rowstatus">'+statusText+'</span></div>' +
+      '<div class="log-status '+statusClass+'">'+statusClass.toUpperCase()+'</div>';
+    tradeLog.insertBefore(row, tradeLog.firstChild);
+  }
+
+  function updateLogRow(id, statusText, statusClass){
+    const row = document.getElementById(id);
+    if(!row) return;
+    const desc = row.querySelector(".rowstatus");
+    if(desc) desc.textContent = statusText;
+    const statusEl = row.querySelector(".log-status");
+    statusEl.className = "log-status " + statusClass;
+    statusEl.textContent = statusClass.toUpperCase();
+  }
+
+  function logSystemNote(text){
+    if(tradeLog.querySelector(".log-empty")) tradeLog.innerHTML = "";
+    const row = document.createElement("div");
+    row.className = "log-row";
+    const time = new Date().toLocaleTimeString();
+    row.innerHTML =
+      '<div class="log-time">'+time+'</div>' +
+      '<div class="log-dir" style="color:var(--ink-faint)">SYS</div>' +
+      '<div class="log-desc">'+text+'</div>' +
+      '<div class="log-status"></div>';
+    tradeLog.insertBefore(row, tradeLog.firstChild);
+  }
+
+  function updateStats(){
+    statTotal.textContent = state.tradesTotal;
+    statWon.textContent = state.tradesWon;
+    statLost.textContent = state.tradesLost;
+    statPnl.textContent = (state.dailyPnl>=0?"+":"") + state.dailyPnl.toFixed(2);
+    statPnl.className = "stat-num " + (state.dailyPnl >= 0 ? "pos" : "neg");
+  }
+
+  // Wipes session stats, the trade log, and any halt reason — but never while
+  // a trade is genuinely open, since that would desync the UI from a real
+  // Deriv position without actually closing it.
+  function resetSession(){
+    if(state.tradeInFlight){
+      const openIds = Object.keys(state.openContracts);
+      const detail = openIds.length ? " (contract #" + openIds.join(", #") + ")" : "";
+      logSystemNote("Reset blocked — a trade is still open" + detail + ". It will settle automatically; reset once it does.");
+      return;
+    }
+    state.tradesTotal = 0;
+    state.tradesWon = 0;
+    state.tradesLost = 0;
+    state.dailyPnl = 0;
+    state.haltReason = null;
+    state.lastTradeTime = 0;
+    state.openContracts = {};
+    state.lastTradeDir = 0;
+    updateStats();
+    updateMasterFlag();
+    updateAlternatorHint();
+    tradeLog.innerHTML = '<div class="log-empty">No trades yet this session.</div>';
+  }
+
+  function updateAlternatorHint(){
+    if(!state.alternatorMode){
+      alternatorHint.style.display = "none";
+      return;
+    }
+    alternatorHint.style.display = "";
+    if(state.lastTradeDir === 0){
+      alternatorNext.textContent = "either (no trade yet this session)";
+    } else {
+      alternatorNext.textContent = state.lastTradeDir > 0 ? "SELL" : "BUY";
+    }
+  }
+
+  function updateMasterFlag(){
+    if(state.autoTrade && state.cyclePaused){
+      masterFlag.className = "master-flag on";
+      masterDot.className = "dot live";
+      masterText.textContent = "Auto-trading is PAUSED";
+      masterSub.textContent = "Cycle target reached — waiting on countdown before the next cycle resumes.";
+    } else if(state.autoTrade){
+      masterFlag.className = "master-flag on";
+      masterDot.className = "dot live";
+      masterText.textContent = "Auto-trading is ON";
+      masterSub.textContent = state.tradeInFlight
+        ? "Trade in progress — waiting for it to settle before the next signal can fire."
+        : "Trading " + state.minStrength.toUpperCase() + "+ signals on " + state.symbol + " · flat stake, no martingale.";
+    } else {
+      masterFlag.className = "master-flag off";
+      masterDot.className = "dot";
+      masterText.textContent = state.haltReason ? "Auto-trading stopped" : "Auto-trading is OFF";
+      masterSub.textContent = state.haltReason || "Signals will display but no trades will be placed.";
+    }
+  }
+
+  /* ===================== PERSISTENCE (localStorage) ===================== */
+  const STORAGE_KEY = "tickframe.settings.v1";
+
+  function savePersisted(){
+    try{
+      const data = {
+        token: tokenInput.value,
+        appId: appIdInput.value,
+        environment: envSelect.value,
+        symbol: symbolSelect.value,
+        minStrength: state.minStrength,
+        stake: parseFloat(stakeInput.value) || 1,
+        durationValue: parseInt(durationValueInput.value, 10) || 1,
+        durationUnit: durationUnitSelect.value,
+        cooldown: parseInt(cooldownSelect.value, 10) || 0,
+        lossLimit: parseFloat(lossLimitInput.value) || 0,
+        profitTarget: parseFloat(profitTargetInput.value) || 0,
+        filters: { ...state.filters },
+        alternatorMode: state.alternatorMode,
+        reverseMode: state.reverseMode,
+        waitTimerMode: state.waitTimerMode,
+        cycleTarget: parseFloat(cycleTargetInput.value) || 0,
+        cycleWaitHour: parseInt(cycleWaitHourInput.value, 10) || 0,
+        cycleWaitMin: parseInt(cycleWaitMinInput.value, 10) || 0,
+        dailyCycleTarget: parseFloat(dailyCycleTargetInput.value) || 0
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }catch(e){ /* storage unavailable (private mode, quota, etc.) — fail silently */ }
+  }
+
+  function loadPersisted(){
+    let data;
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return;
+      data = JSON.parse(raw);
+    }catch(e){ return; }
+    if(!data) return;
+
+    if(data.token) tokenInput.value = data.token;
+    if(data.appId) appIdInput.value = data.appId;
+    if(data.environment) envSelect.value = data.environment;
+    if(data.symbol){ symbolSelect.value = data.symbol; state.symbol = data.symbol; }
+
+    if(data.minStrength){
+      state.minStrength = data.minStrength;
+      [...strengthSeg.children].forEach(b=>{
+        b.classList.toggle("active", b.dataset.v === data.minStrength);
+      });
+    }
+    if(data.stake != null){ stakeInput.value = data.stake; state.stake = data.stake; }
+    if(data.durationValue != null){ durationValueInput.value = data.durationValue; state.durationValue = data.durationValue; }
+    if(data.durationUnit){ durationUnitSelect.value = data.durationUnit; state.durationUnit = data.durationUnit; }
+    if(data.cooldown != null){ cooldownSelect.value = String(data.cooldown); state.cooldown = data.cooldown; }
+    if(data.lossLimit != null){ lossLimitInput.value = data.lossLimit; state.lossLimit = data.lossLimit; }
+    if(data.profitTarget != null){ profitTargetInput.value = data.profitTarget; state.profitTarget = data.profitTarget; }
+
+    if(data.filters){
+      Object.keys(filterCheckboxes).forEach(key=>{
+        if(data.filters[key] != null){
+          state.filters[key] = !!data.filters[key];
+          filterCheckboxes[key].checked = state.filters[key];
+          filterCheckboxes[key].closest(".filter-item").classList.toggle("checked", state.filters[key]);
+        }
+      });
+    }
+
+    if(data.alternatorMode != null){
+      state.alternatorMode = !!data.alternatorMode;
+      alternatorToggle.checked = state.alternatorMode;
+      updateAlternatorHint();
+    }
+
+    if(data.reverseMode != null){
+      state.reverseMode = !!data.reverseMode;
+      reverseToggle.checked = state.reverseMode;
+    }
+
+    if(data.cycleTarget != null){ cycleTargetInput.value = data.cycleTarget; state.cycleTarget = data.cycleTarget; }
+    if(data.cycleWaitHour != null){ cycleWaitHourInput.value = data.cycleWaitHour; state.cycleWaitHour = data.cycleWaitHour; }
+    if(data.cycleWaitMin != null){ cycleWaitMinInput.value = data.cycleWaitMin; state.cycleWaitMin = data.cycleWaitMin; }
+    if(data.dailyCycleTarget != null){ dailyCycleTargetInput.value = data.dailyCycleTarget; state.dailyCycleTarget = data.dailyCycleTarget; }
+    if(data.waitTimerMode != null){
+      state.waitTimerMode = !!data.waitTimerMode;
+      waitTimerToggle.checked = state.waitTimerMode;
+    }
+
+    updateDurationHint();
+    updateCycleWaitHint();
+    renderCycleStatus();
+  }
+
+  /* ===================== SESSION TIMER ===================== */
+  let sessionStartTime = null;
+  let sessionTimerHandle = null;
+
+  function startSessionTimer(){
+    sessionStartTime = Date.now();
+    sessionTimerEl.style.display = "inline";
+    sessionTimerEl.textContent = "00:00:00";
+    if(sessionTimerHandle) clearInterval(sessionTimerHandle);
+    sessionTimerHandle = setInterval(tickSessionTimer, 1000);
+  }
+
+  function tickSessionTimer(){
+    if(!sessionStartTime) return;
+    const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+    const h = String(Math.floor(elapsed / 3600)).padStart(2, "0");
+    const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, "0");
+    const s = String(elapsed % 60).padStart(2, "0");
+    sessionTimerEl.textContent = h + ":" + m + ":" + s;
+  }
+
+  function resetSessionTimer(){
+    sessionStartTime = null;
+    if(sessionTimerHandle){ clearInterval(sessionTimerHandle); sessionTimerHandle = null; }
+    sessionTimerEl.textContent = "00:00:00";
+    sessionTimerEl.style.display = "none";
+  }
+
+  /* ===================== EVENT WIRING ===================== */
+  connectBtn.addEventListener("click", connect);
+  disconnectBtn.addEventListener("click", endSessionManually);
+  resetSessionBtn.addEventListener("click", function(){
+    if(confirm("Reset session stats and clear the trade log? This can't be undone.")){
+      resetSession();
+    }
+  });
+
+  symbolSelect.addEventListener("change", function(){
+    subscribeSymbol(this.value);
+    savePersisted();
+  });
+
+  autoToggle.addEventListener("change", function(){
+    state.autoTrade = this.checked;
+    if(this.checked) state.haltReason = null;
+    updateMasterFlag();
+
+    // Turning auto-trade off does NOT touch any position that's already open —
+    // it only stops new signals from firing. The existing proposal_open_contract
+    // subscription should settle the row on its own, but re-request its current
+    // status here too as a safety net in case that stream ever stalls, so the
+    // gate reliably clears (and Reset session stops being blocked) once the
+    // contract actually closes.
+    if(!this.checked && state.tradeInFlight){
+      Object.keys(state.openContracts).forEach(function(contractId){
+        send({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 });
+      });
+    }
+  });
+
+  alternatorToggle.addEventListener("change", function(){
+    state.alternatorMode = this.checked;
+    // Turning it on mid-session starts the alternation from whatever the last
+    // placed trade was (if any) — it does NOT reset lastTradeDir, so if a BUY
+    // already went out earlier in the session, the very next auto-trade must
+    // still be a SELL. Turning it off simply stops enforcing the gate; the
+    // memory of the last direction is kept in case it's re-enabled later.
+    updateAlternatorHint();
+    savePersisted();
+  });
+
+  reverseToggle.addEventListener("change", function(){
+    state.reverseMode = this.checked;
+    savePersisted();
+  });
+
+  strengthSeg.addEventListener("click", function(e){
+    const btn = e.target.closest("button");
+    if(!btn) return;
+    [...strengthSeg.children].forEach(b=>b.classList.remove("active","fall-active"));
+    btn.classList.add("active");
+    state.minStrength = btn.dataset.v;
+    updateMasterFlag();
+    savePersisted();
+  });
+
+  Object.keys(filterCheckboxes).forEach(key=>{
+    const cb = filterCheckboxes[key];
+    cb.addEventListener("change", function(){
+      state.filters[key] = this.checked;
+      this.closest(".filter-item").classList.toggle("checked", this.checked);
+      savePersisted();
+    });
+  });
+
+  stakeInput.addEventListener("change", function(){ state.stake = parseFloat(this.value)||1; savePersisted(); });
+  durationValueInput.addEventListener("change", function(){
+    state.durationValue = Math.max(1, parseInt(this.value,10) || 1);
+    durationValueInput.value = state.durationValue;
+    updateDurationHint();
+    savePersisted();
+  });
+  durationUnitSelect.addEventListener("change", function(){
+    state.durationUnit = this.value;
+    updateDurationHint();
+    savePersisted();
+  });
+  cooldownSelect.addEventListener("change", function(){ state.cooldown = parseInt(this.value,10); savePersisted(); });
+  lossLimitInput.addEventListener("change", function(){ state.lossLimit = parseFloat(this.value)||0; savePersisted(); });
+  profitTargetInput.addEventListener("change", function(){ state.profitTarget = parseFloat(this.value)||0; savePersisted(); });
+
+  waitTimerToggle.addEventListener("change", function(){
+    state.waitTimerMode = this.checked;
+    if(!this.checked){
+      resetWaitTimerCycle();
+    } else {
+      renderCycleStatus();
+    }
+    savePersisted();
+  });
+  cycleTargetInput.addEventListener("change", function(){ state.cycleTarget = parseFloat(this.value)||0; renderCycleStatus(); savePersisted(); });
+  cycleWaitHourInput.addEventListener("change", function(){
+    state.cycleWaitHour = Math.max(0, parseInt(this.value,10) || 0);
+    cycleWaitHourInput.value = state.cycleWaitHour;
+    updateCycleWaitHint();
+    savePersisted();
+  });
+  cycleWaitMinInput.addEventListener("change", function(){
+    state.cycleWaitMin = Math.max(0, parseInt(this.value,10) || 0);
+    cycleWaitMinInput.value = state.cycleWaitMin;
+    updateCycleWaitHint();
+    savePersisted();
+  });
+  dailyCycleTargetInput.addEventListener("change", function(){ state.dailyCycleTarget = parseFloat(this.value)||0; renderCycleStatus(); savePersisted(); });
+
+  tokenInput.addEventListener("change", savePersisted);
+  appIdInput.addEventListener("change", savePersisted);
+  envSelect.addEventListener("change", savePersisted);
+
+  window.addEventListener("beforeunload", function(){
+    if(state.ws) state.ws.close();
+  });
+
+  // Network drop / laptop sleep / tab backgrounded: when the tab becomes visible
+  // again, check the socket is actually still open and kick a reconnect if not.
+  // Debounced so a brief hidden->visible flicker doesn't trigger a reconnect storm.
+  let visibilityDebounce = null;
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState !== "visible") return;
+    if(visibilityDebounce) return;
+    visibilityDebounce = setTimeout(function(){
+      visibilityDebounce = null;
+      if(state.manualDisconnect) return;
+      const alive = state.ws && state.ws.readyState === WebSocket.OPEN;
+      if(!alive && !state.reconnectTimer){
+        const token = tokenInput.value.trim();
+        const appId = (appIdInput && appIdInput.value.trim()) || "";
+        if(token && appId){
+          state.reconnectDelay = 2000;
+          establishConnection(token, appId, { showBusyUi: false, reconnecting: true });
+        }
+      }
+    }, 2000);
+  });
+
+  /* ===================== INIT ===================== */
+  loadPersisted();
+  updateDurationHint();
+  updateCycleWaitHint();
+  renderCycleStatus();
+
+  // Auto-reconnect after a page refresh: if a token + app_id were saved from a
+  // previous session, re-establish the connection automatically instead of
+  // requiring the user to hit Connect again.
+  (function autoConnectOnLoad(){
+    const token = tokenInput.value.trim();
+    const appId = (appIdInput && appIdInput.value.trim()) || "";
+    if(token && appId){
+      state.environment = envSelect.value || "demo";
+      state.appId = appId;
+      establishConnection(token, appId, { showBusyUi: true });
+    }
+  })();
+
+})();
+</script>
+</body>
+</html>
