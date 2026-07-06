@@ -1210,6 +1210,10 @@
       autoToggle.checked = false;
     }
     updateMasterFlag();
+    // Deliberate disconnect: wipe the token so it isn't left sitting in
+    // storage or in the field, and so a later refresh has nothing to
+    // auto-connect with.
+    clearPersistedToken();
   }
 
   /* ===================== MARKET DATA ===================== */
@@ -1923,6 +1927,21 @@
     }catch(e){ /* storage unavailable (private mode, quota, etc.) — fail silently */ }
   }
 
+  // Wipes the token from both the input field and localStorage, without
+  // touching any other saved settings. Used whenever the token should not
+  // survive to the next connect attempt (manual disconnect, refresh).
+  function clearPersistedToken(){
+    tokenInput.value = "";
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        const data = JSON.parse(raw);
+        data.token = "";
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      }
+    }catch(e){ /* storage unavailable — fail silently */ }
+  }
+
   function loadPersisted(){
     let data;
     try{
@@ -2126,6 +2145,9 @@
 
   window.addEventListener("beforeunload", function(){
     if(state.ws) state.ws.close();
+    // A refresh/close is treated the same as a manual disconnect: the token
+    // must not survive to reload and silently reconnect.
+    clearPersistedToken();
   });
 
   // Network drop / laptop sleep / tab backgrounded: when the tab becomes visible
@@ -2156,18 +2178,12 @@
   updateCycleWaitHint();
   renderCycleStatus();
 
-  // Auto-reconnect after a page refresh: if a token + app_id were saved from a
-  // previous session, re-establish the connection automatically instead of
-  // requiring the user to hit Connect again.
-  (function autoConnectOnLoad(){
-    const token = tokenInput.value.trim();
-    const appId = (appIdInput && appIdInput.value.trim()) || "";
-    if(token && appId){
-      state.environment = envSelect.value || "demo";
-      state.appId = appId;
-      establishConnection(token, appId, { showBusyUi: true });
-    }
-  })();
+  // NOTE: There is deliberately no auto-connect-on-load here. A manual
+  // disconnect or a browser refresh both clear the saved token (see
+  // clearPersistedToken / beforeunload above), so a fresh page load never
+  // has a token to reconnect with. Reconnection only ever happens while a
+  // session was already connected and a network drop is detected (see the
+  // visibilitychange handler and keepalive watchdog above) — never on load.
 
 })();
 </script>
