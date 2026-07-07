@@ -518,6 +518,20 @@
                   <div class="filter-item-sub">Requires specifically a "lower rejection" for BUY, or an "upper rejection" for SELL.</div>
                 </div>
               </label>
+              <label class="filter-item" data-filter="emaTrend">
+                <input type="checkbox" id="filterEmaTrend">
+                <div class="filter-item-body">
+                  <div class="filter-item-title">Trend filter — EMA slope</div>
+                  <div class="filter-item-sub">Requires a long-period EMA (200 ticks) to be sloping up for BUY, or down for SELL. Blocks trades against the broader trend.</div>
+                </div>
+              </label>
+              <label class="filter-item" data-filter="macroStructure">
+                <input type="checkbox" id="filterMacroStructure">
+                <div class="filter-item-body">
+                  <div class="filter-item-title">Trend filter — higher-timeframe structure</div>
+                  <div class="filter-item-sub">Requires the swing structure over the last 250 ticks to agree with the signal direction (HH/HL for BUY, LL/LH for SELL) — not just the short 40-tick window.</div>
+                </div>
+              </label>
             </div>
             <div class="field-hint">Select any combination — or none. Every filter you check must be satisfied at the moment of the signal, or the auto-trade is rejected. Leave all unchecked to trade on signal strength alone.</div>
           </div>
@@ -629,14 +643,16 @@
     environment: "demo", // "demo" | "real" — selects /ws/demo or /ws/real
     symbol: "R_75",
     ticks: [],            // {price, epoch}
-    maxTicks: 300,
+    maxTicks: 400,
     lastReqId: 1,
     pending: {},           // req_id -> handler
     autoTrade: false,
     minStrength: "medium", // low | medium | high
     filters: {              // entry confirmation filters — all checked ones must pass or the trade is rejected
       hhhl: false,
-      lowerRejection: false
+      lowerRejection: false,
+      emaTrend: false,       // long-EMA slope must agree with signal direction
+      macroStructure: false  // higher-timeframe swing structure must agree with signal direction
     },
     alternatorMode: false,   // when on, forces strict BUY/SELL alternation regardless of signal/filters
     lastTradeDir: 0,         // direction (1/-1) of the last trade actually placed; 0 = none yet this session
@@ -695,9 +711,12 @@
   const alternatorToggle = $("alternatorToggle"), alternatorHint = $("alternatorHint"), alternatorNext = $("alternatorNext");
   const reverseToggle = $("reverseToggle");
   const filterHhHl = $("filterHhHl"), filterLowerRejection = $("filterLowerRejection");
+  const filterEmaTrend = $("filterEmaTrend"), filterMacroStructure = $("filterMacroStructure");
   const filterCheckboxes = {
     hhhl: filterHhHl,
-    lowerRejection: filterLowerRejection
+    lowerRejection: filterLowerRejection,
+    emaTrend: filterEmaTrend,
+    macroStructure: filterMacroStructure
   };
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
@@ -1347,6 +1366,14 @@
     // --- Factor 4: rejection / snap-back detection ---
     const rejection = detectRejection(prices);
 
+    // --- Trend filters (not part of the composite score — only used to gate
+    // auto-trades if the corresponding checkbox is enabled): computed over
+    // the FULL tick buffer, not the short 40-tick signal window, so they
+    // reflect the broader trend rather than the immediate micro-move. ---
+    const allPrices = ticks.map(t => t.price);
+    const emaTrend = computeEmaTrend(allPrices);
+    const macroStructure = computeMacroStructure(allPrices);
+
     // --- Combine into weighted composite ---
     // Base direction = majority vote among momentum, velocity, structure
     const votes = [ [runDir, momentumScore*1.0], [velocityDir, velocityScore*0.9], [structureDir, structureScore*1.1] ];
@@ -1383,13 +1410,53 @@
     renderSignal(level, levelLabel, compositeDir, compositeScore);
     renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection);
 
-    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection);
+    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection, emaTrend, macroStructure);
   }
 
   function avgAbsoluteStep(prices){
     let sum = 0, n = 0;
     for(let i=1;i<prices.length;i++){ sum += Math.abs(prices[i]-prices[i-1]); n++; }
     return n ? sum/n : 0;
+  }
+
+  // Simple EMA series over an array of prices. Returns the full EMA array
+  // (same length as prices) so slope can be read at any offset from the end.
+  function emaSeries(prices, period){
+    if(prices.length === 0) return [];
+    const k = 2 / (period + 1);
+    const out = new Array(prices.length);
+    out[0] = prices[0];
+    for(let i=1;i<prices.length;i++){
+      out[i] = prices[i]*k + out[i-1]*(1-k);
+    }
+    return out;
+  }
+
+  // Trend filter #1: slope of a long-period EMA. Uses whatever history is
+  // available (up to ~200 ticks) so it reflects the broader trend rather
+  // than the short 40-tick signal window.
+  function computeEmaTrend(allPrices){
+    const period = Math.min(200, Math.max(20, Math.floor(allPrices.length * 0.6)));
+    const lookback = Math.min(20, Math.floor(allPrices.length / 4));
+    if(allPrices.length < period + lookback || lookback < 1){
+      return { dir: 0, label: "not enough history" };
+    }
+    const ema = emaSeries(allPrices, period);
+    const now = ema[ema.length - 1];
+    const then = ema[ema.length - 1 - lookback];
+    if(now > then) return { dir: 1, label: "EMA rising" };
+    if(now < then) return { dir: -1, label: "EMA falling" };
+    return { dir: 0, label: "EMA flat" };
+  }
+
+  // Trend filter #2: same swing-structure classifier already used for the
+  // short-window signal, but run over a much larger slice of tick history so
+  // it reflects higher-timeframe structure instead of the last few seconds.
+  function computeMacroStructure(allPrices){
+    const macroWindow = allPrices.slice(-250);
+    if(macroWindow.length < 60) return { dir: 0, strength: 0, label: "not enough history" };
+    const swings = findSwings(macroWindow);
+    return classifyStructure(swings);
   }
 
   function findSwings(prices){
@@ -1487,7 +1554,7 @@
   // Checks the user-selected entry confirmation filters against this signal's
   // structure/rejection readouts. Returns { passed, reasons } — reasons lists
   // any checked filter that failed, so the rejection can be logged clearly.
-  function checkEntryFilters(dir, structure, rejection){
+  function checkEntryFilters(dir, structure, rejection, emaTrend, macroStructure){
     const f = state.filters;
     const reasons = [];
 
@@ -1499,11 +1566,17 @@
       const wantLabel = dir > 0 ? "lower rejection" : "upper rejection";
       if(!rejection.detected || rejection.label !== wantLabel) reasons.push((dir>0 ? "Lower" : "Upper") + " rejection not present (got: " + (rejection.detected ? rejection.label : "none") + ")");
     }
+    if(f.emaTrend){
+      if(emaTrend.dir === 0 || emaTrend.dir !== dir) reasons.push("EMA trend not aligned (got: " + emaTrend.label + ")");
+    }
+    if(f.macroStructure){
+      if(macroStructure.dir === 0 || macroStructure.dir !== dir) reasons.push("Higher-timeframe structure not aligned (got: " + macroStructure.label + ")");
+    }
 
     return { passed: reasons.length === 0, reasons };
   }
 
-  function maybeAutoTrade(level, dir, score, structure, rejection){
+  function maybeAutoTrade(level, dir, score, structure, rejection, emaTrend, macroStructure){
     if(!state.autoTrade) return;
     if(dir === 0 || level === "none") return;
     if(state.haltReason) return;
@@ -1513,7 +1586,7 @@
 
     if(strengthRank[level] < strengthRank[state.minStrength]) return;
 
-    const gate = checkEntryFilters(dir, structure, rejection);
+    const gate = checkEntryFilters(dir, structure, rejection, emaTrend, macroStructure);
     if(!gate.passed){
       // Filter rejections are expected/frequent (a filtered signal fires far more
       // often than it passes) — block silently rather than flooding the trade log.
