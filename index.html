@@ -732,10 +732,32 @@
   // mysterious 401s, especially over RDP/VPS clipboard sync) is visible
   // immediately rather than only surfacing as an opaque server rejection
   // after clicking Connect.
+  //
+  // Also specifically checks Personal Access Token shape: PATs start with
+  // "pat_" followed by hex. Some VPS remote-desktop/clipboard/IME paths have
+  // been observed to silently drop the underscore character on paste (e.g.
+  // "pat_38aab314..." arrives as "pat38aab314..."), which produces a token
+  // that looks almost right at a glance but is rejected outright by Deriv.
+  // This check catches exactly that shape and calls it out by name instead
+  // of leaving it to be diagnosed via a bare 401 from the server.
+  function checkTokenShape(token){
+    if(/^pat[0-9a-f]{10,}$/i.test(token)){
+      return "missing underscore after \u201cpat\u201d \u2014 this looks like a Personal Access Token that should start with \u201cpat_\u201d but the underscore was dropped (common on some VPS paste paths). Re-paste the token.";
+    }
+    return null;
+  }
+
   function updateTokenLenHint(){
     const raw = tokenInput.value;
     const clean = sanitizeToken(raw);
     if(!raw){ tokenLenHint.textContent = ""; return; }
+
+    const shapeIssue = checkTokenShape(clean);
+    if(shapeIssue){
+      tokenLenHint.textContent = clean.length + " characters \u2014 " + shapeIssue;
+      tokenLenHint.style.color = "var(--fall, #e5484d)";
+      return;
+    }
     if(clean !== raw){
       tokenLenHint.textContent = clean.length + " characters (whitespace/invisible characters detected and will be stripped before connecting)";
       tokenLenHint.style.color = "var(--fall, #e5484d)";
@@ -804,6 +826,11 @@
 
     if(!token){
       showGateError("Enter your Deriv access token first.");
+      return;
+    }
+    const shapeIssue = checkTokenShape(token);
+    if(shapeIssue){
+      showGateError("Token looks malformed \u2014 " + shapeIssue);
       return;
     }
     if(token !== tokenInput.value){
