@@ -359,12 +359,15 @@
         <button class="btn btn-primary" id="connectBtn" style="white-space:nowrap;">Authorize &amp; connect</button>
       </div>
     </div>
-    <div class="field" style="margin-top:2px;">
+    <div class="field" style="margin-top:8px;">
+      <button class="btn btn-danger-ghost" style="width:100%" id="disconnectBtn">Disconnect &amp; end session</button>
+    </div>
+    <div class="field" style="margin-top:2px; display:none;">
       <label>App ID <span style="text-transform:none; color:var(--ink-faint);">(required — the new API needs this on every REST call)</span></label>
-      <input type="text" id="appIdInput" placeholder="Your registered app_id" value="33ASXUrIJnjw7MMMaAuLL" autocomplete="off">
+      <input type="text" id="appIdInput" placeholder="Your registered app_id" value="33ASXUrIJnjw7MMMaAuLL" readonly autocomplete="off">
     </div>
     <div class="field-hint" id="connHint">
-      Deriv retired the Legacy WebSocket API. This build uses the new Options API: your token authenticates a short-lived REST call that returns a one-time-password WebSocket URL — there's no more direct <code>authorize</code> handshake. Generate a token (OAuth2 or Personal Access Token) at <a href="https://app.deriv.com/account/api-token" target="_blank" rel="noopener">app.deriv.com/account/api-token</a> with the <b>trade</b> scope, and register an app_id at <a href="https://developers.deriv.com" target="_blank" rel="noopener">developers.deriv.com</a> — the shared test app_id no longer works against the new endpoints.
+      Deriv retired the Legacy WebSocket API. This build uses the new Options API: your token authenticates a short-lived REST call that returns a one-time-password WebSocket URL — there's no more direct <code>authorize</code> handshake. Generate a token (OAuth2 or Personal Access Token) at <a href="https://app.deriv.com/account/api-token" target="_blank" rel="noopener">app.deriv.com/account/api-token</a> with the <b>trade</b> scope. The app_id is preconfigured for this build.
     </div>
   </div>
 
@@ -603,13 +606,6 @@
             <div class="log-empty">No trades yet this session.</div>
           </div>
         </div>
-
-        <div class="panel">
-          <button class="btn btn-danger-ghost" style="width:100%" id="disconnectBtn">Disconnect &amp; end session</button>
-          <div class="footer-note">
-            Signals are generated from raw tick price action only — no indicators. This is not financial advice; synthetic indices carry full risk of loss. Demo-test thoroughly before using a real-money token.
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -620,12 +616,15 @@
 (function(){
   "use strict";
 
+  // Hard-coded Deriv app_id for this build — no longer user-configurable.
+  const APP_ID = "33ASXUrIJnjw7MMMaAuLL";
+
   /* ===================== STATE ===================== */
   const state = {
     ws: null,
     connected: false,
     authorized: false,
-    appId: "",       // Deriv-App-ID header — required for the new Options API, no shared test id anymore
+    appId: APP_ID,    // Deriv-App-ID header — required for the new Options API, no shared test id anymore
     accountId: "",    // e.g. "DOT90004580", resolved from /accounts before requesting an OTP
     environment: "demo", // "demo" | "real" — selects /ws/demo or /ws/real
     symbol: "R_75",
@@ -725,15 +724,11 @@
 
   async function connect(){
     const token = tokenInput.value.trim();
-    const appId = (appIdInput && appIdInput.value.trim()) || "";
+    const appId = APP_ID;
     state.environment = envSelect.value || "demo";
 
     if(!token){
       showGateError("Enter your Deriv access token first.");
-      return;
-    }
-    if(!appId){
-      showGateError("Enter your app_id — the new API requires a Deriv-App-ID header on every request.");
       return;
     }
     state.appId = appId;
@@ -782,8 +777,8 @@
     if(state.manualDisconnect) return;
     clearReconnectTimer();
     const token = tokenInput.value.trim();
-    const appId = (appIdInput && appIdInput.value.trim()) || "";
-    if(!token || !appId) return;
+    const appId = APP_ID;
+    if(!token) return;
 
     const delay = state.reconnectDelay;
     setConn("wait", "reconnecting in " + Math.round(delay/1000) + "s…");
@@ -1904,7 +1899,7 @@
     try{
       const data = {
         token: tokenInput.value,
-        appId: appIdInput.value,
+        appId: APP_ID,
         environment: envSelect.value,
         symbol: symbolSelect.value,
         minStrength: state.minStrength,
@@ -1952,7 +1947,7 @@
     if(!data) return;
 
     if(data.token) tokenInput.value = data.token;
-    if(data.appId) appIdInput.value = data.appId;
+    // appId is hard-coded (APP_ID) — no longer read from storage.
     if(data.environment) envSelect.value = data.environment;
     if(data.symbol){ symbolSelect.value = data.symbol; state.symbol = data.symbol; }
 
@@ -2140,7 +2135,7 @@
   dailyCycleTargetInput.addEventListener("change", function(){ state.dailyCycleTarget = parseFloat(this.value)||0; renderCycleStatus(); savePersisted(); });
 
   tokenInput.addEventListener("change", savePersisted);
-  appIdInput.addEventListener("change", savePersisted);
+  // appIdInput is hard-coded/readonly now — no change listener needed.
   envSelect.addEventListener("change", savePersisted);
 
   window.addEventListener("beforeunload", function(){
@@ -2163,8 +2158,8 @@
       const alive = state.ws && state.ws.readyState === WebSocket.OPEN;
       if(!alive && !state.reconnectTimer){
         const token = tokenInput.value.trim();
-        const appId = (appIdInput && appIdInput.value.trim()) || "";
-        if(token && appId){
+        const appId = APP_ID;
+        if(token){
           state.reconnectDelay = 2000;
           establishConnection(token, appId, { showBusyUi: false, reconnecting: true });
         }
