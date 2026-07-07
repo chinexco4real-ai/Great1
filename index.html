@@ -691,6 +691,7 @@
     reconnectDelay: 2000,     // starts at 2s, doubles up to reconnectMaxDelay
     reconnectMaxDelay: 30000,
     reconnectTimer: null,
+    reconnectInFlight: false, // guards against overlapping establishConnection() calls racing each other
     authStageFailCount: 0,    // consecutive pre-socket (REST-leg) failures; caps auto-retry so a blocked/rejected connection doesn't loop forever
 
     // ── Waiting-timer mode ──────────────────────────────────────────────
@@ -842,6 +843,7 @@
     state.manualDisconnect = false;
     clearReconnectTimer();
     state.reconnectDelay = 2000;
+    state.reconnectInFlight = false; // manual click always wins, even if a stale auto-reconnect attempt is (or appears) in flight
     state.authStageFailCount = 0; // manual click = a deliberate fresh attempt, give it the full retry budget again
 
     await establishConnection(token, appId, { showBusyUi: true });
@@ -852,6 +854,19 @@
   // since OTP URLs are single-use/short-lived and can't just be reopened.
   async function establishConnection(token, appId, opts){
     opts = opts || {};
+    // Guard against overlapping calls: a slow in-flight REST leg (resolveAccount/
+    // requestOtpUrl can each take seconds) must not be raced by a second trigger —
+    // e.g. the tab regaining visibility, or the reconnect timer firing — while the
+    // first attempt is still resolving. Without this, both attempts can eventually
+    // call openSocket() and stomp on state.ws, leaving one socket connected but
+    // orphaned from the reconnect logic (its onclose never runs because a newer
+    // socket already overwrote state.ws), which is exactly what makes reconnection
+    // look "stuck"/silently broken after a real network drop.
+    if(state.reconnectInFlight && !opts.showBusyUi){
+      return;
+    }
+    state.reconnectInFlight = true;
+
     if(opts.showBusyUi){
       gateError.style.display = "none";
       connectBtn.disabled = true;
@@ -864,9 +879,11 @@
       setConn("wait", "requesting session…");
       const wsUrl = await requestOtpUrl(token, appId, account.account_id);
       state.authStageFailCount = 0; // REST leg succeeded — reset the auth-failure counter
+      state.reconnectInFlight = false; // clear before opening the socket so its own onclose/onerror can schedule freely
       openSocket(wsUrl);
       savePersisted();
     }catch(err){
+      state.reconnectInFlight = false;
       // This failure happened during the REST leg (resolveAccount / requestOtpUrl) —
       // the socket never even opened. That's a fundamentally different situation
       // from a live connection dropping: retrying the exact same request is very
@@ -913,6 +930,12 @@
   // no saved token/appId to reconnect with.
   function scheduleReconnect(){
     if(state.manualDisconnect) return;
+    // If a connection attempt is already mid-flight (e.g. triggered by the
+    // visibility handler, or this is a stale/duplicate onclose from a socket
+    // that's already been superseded), don't stack another timer on top of it —
+    // let that attempt finish and let its own success/failure path decide what,
+    // if anything, needs to be scheduled next.
+    if(state.reconnectInFlight) return;
     clearReconnectTimer();
     const token = sanitizeToken(tokenInput.value);
     const appId = APP_ID;
@@ -1313,6 +1336,7 @@
 
   function disconnectSession(){
     state.manualDisconnect = true;
+    state.reconnectInFlight = false;
     clearReconnectTimer();
     stopKeepalive();
     if(state.ws) state.ws.close();
@@ -2353,7 +2377,11 @@
       visibilityDebounce = null;
       if(state.manualDisconnect) return;
       const alive = state.ws && state.ws.readyState === WebSocket.OPEN;
-      if(!alive && !state.reconnectTimer){
+      // Also skip if a reconnect attempt is already mid-flight (e.g. the timer-based
+      // attempt is currently awaiting the REST leg) — otherwise this handler and the
+      // scheduled attempt can race and both eventually call openSocket(), each
+      // overwriting state.ws and orphaning the other's socket/reconnect chain.
+      if(!alive && !state.reconnectTimer && !state.reconnectInFlight){
         const token = sanitizeToken(tokenInput.value);
         const appId = APP_ID;
         if(token){
