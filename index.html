@@ -346,6 +346,7 @@
       <div class="field" style="flex:1.4;">
         <label>Access token</label>
         <input type="password" id="tokenInput" placeholder="Paste your Deriv OAuth2 / PAT token here" autocomplete="off">
+        <div id="tokenLenHint" style="font-size:10.5px; color:var(--ink-faint); margin-top:5px; min-height:13px;"></div>
       </div>
       <div class="field" style="flex:0.7;">
         <label>Environment</label>
@@ -702,6 +703,25 @@
   const balancePill = $("balancePill");
   const gateError = $("gateError");
   const tokenInput = $("tokenInput"), envSelect = $("envSelect"), appIdInput = $("appIdInput");
+  const tokenLenHint = $("tokenLenHint");
+
+  // Live feedback so a corrupted/partial paste (a common cause of otherwise
+  // mysterious 401s, especially over RDP/VPS clipboard sync) is visible
+  // immediately rather than only surfacing as an opaque server rejection
+  // after clicking Connect.
+  function updateTokenLenHint(){
+    const raw = tokenInput.value;
+    const clean = sanitizeToken(raw);
+    if(!raw){ tokenLenHint.textContent = ""; return; }
+    if(clean !== raw){
+      tokenLenHint.textContent = clean.length + " characters (whitespace/invisible characters detected and will be stripped before connecting)";
+      tokenLenHint.style.color = "var(--fall, #e5484d)";
+    } else {
+      tokenLenHint.textContent = clean.length + " characters";
+      tokenLenHint.style.color = "var(--ink-faint)";
+    }
+  }
+  tokenInput.addEventListener("input", updateTokenLenHint);
   const connectBtn = $("connectBtn"), disconnectBtn = $("disconnectBtn");
   const symbolSelect = $("symbolSelect");
   const priceMain = $("priceMain"), priceDelta = $("priceDelta"), priceMeta = $("priceMeta");
@@ -742,14 +762,31 @@
   //   3. new WebSocket(that url)                       -> already authenticated; no `authorize` message needed
   const REST_BASE = "https://api.derivws.com/trading/v1/options";
 
+  // Deriv tokens (OAuth2 and PATs, e.g. "pat_...") are long single-token
+  // strings with no internal spaces. Clipboard managers — especially over
+  // RDP/VPS remote-desktop clipboard sync — can introduce invisible
+  // characters a plain .trim() won't catch: embedded newlines from a
+  // wrapped copy, zero-width spaces, or other stray whitespace in the
+  // middle of the string. Strip ALL whitespace/control characters, not just
+  // leading/trailing, so a corrupted paste can't silently produce a token
+  // that "looks right" in a password-masked field but 401s on the server.
+  function sanitizeToken(raw){
+    return (raw || "").replace(/[\s\u200B-\u200D\uFEFF]/g, "");
+  }
+
   async function connect(){
-    const token = tokenInput.value.trim();
+    const token = sanitizeToken(tokenInput.value);
     const appId = APP_ID;
     state.environment = envSelect.value || "demo";
 
     if(!token){
       showGateError("Enter your Deriv access token first.");
       return;
+    }
+    if(token !== tokenInput.value){
+      // The field had stray whitespace/invisible characters — reflect the
+      // cleaned value back so what's in the box matches what's actually sent.
+      tokenInput.value = token;
     }
     state.appId = appId;
     state.manualDisconnect = false;
@@ -827,7 +864,7 @@
   function scheduleReconnect(){
     if(state.manualDisconnect) return;
     clearReconnectTimer();
-    const token = tokenInput.value.trim();
+    const token = sanitizeToken(tokenInput.value);
     const appId = APP_ID;
     if(!token) return;
 
@@ -2036,6 +2073,7 @@
   // survive to the next connect attempt (manual disconnect, refresh).
   function clearPersistedToken(){
     tokenInput.value = "";
+    if(typeof updateTokenLenHint === "function") updateTokenLenHint();
     try{
       const raw = localStorage.getItem(STORAGE_KEY);
       if(raw){
@@ -2055,7 +2093,7 @@
     }catch(e){ return; }
     if(!data) return;
 
-    if(data.token) tokenInput.value = data.token;
+    if(data.token){ tokenInput.value = data.token; updateTokenLenHint(); }
     // appId is hard-coded (APP_ID) — no longer read from storage.
     if(data.environment) envSelect.value = data.environment;
     if(data.symbol){ symbolSelect.value = data.symbol; state.symbol = data.symbol; }
@@ -2266,7 +2304,7 @@
       if(state.manualDisconnect) return;
       const alive = state.ws && state.ws.readyState === WebSocket.OPEN;
       if(!alive && !state.reconnectTimer){
-        const token = tokenInput.value.trim();
+        const token = sanitizeToken(tokenInput.value);
         const appId = APP_ID;
         if(token){
           state.reconnectDelay = 2000;
