@@ -680,6 +680,7 @@
     reconnectDelay: 2000,     // starts at 2s, doubles up to reconnectMaxDelay
     reconnectMaxDelay: 30000,
     reconnectTimer: null,
+    authStageFailCount: 0,    // consecutive pre-socket (REST-leg) failures; caps auto-retry so a blocked/rejected connection doesn't loop forever
 
     // ── Waiting-timer mode ──────────────────────────────────────────────
     waitTimerMode: false,     // master switch for the cycle feature
@@ -754,6 +755,7 @@
     state.manualDisconnect = false;
     clearReconnectTimer();
     state.reconnectDelay = 2000;
+    state.authStageFailCount = 0; // manual click = a deliberate fresh attempt, give it the full retry budget again
 
     await establishConnection(token, appId, { showBusyUi: true });
   }
@@ -774,13 +776,43 @@
       const account = await resolveAccount(token, appId, state.environment);
       setConn("wait", "requesting session…");
       const wsUrl = await requestOtpUrl(token, appId, account.account_id);
+      state.authStageFailCount = 0; // REST leg succeeded — reset the auth-failure counter
       openSocket(wsUrl);
       savePersisted();
     }catch(err){
-      showGateError(err.message || "Could not connect to Deriv.");
+      // This failure happened during the REST leg (resolveAccount / requestOtpUrl) —
+      // the socket never even opened. That's a fundamentally different situation
+      // from a live connection dropping: retrying the exact same request is very
+      // unlikely to change the outcome if the real cause is something like the
+      // network/IP being blocked or rate-limited by Deriv, an invalid/expired
+      // token, or an unreachable host — all of which look identical from here
+      // (a rejected fetch) and none of which time heals.
+      //
+      // So: keep the real error message on screen instead of letting the
+      // reconnect loop silently overwrite it with "reconnecting…", and only
+      // retry a bounded number of times (with backoff) rather than forever.
+      state.authStageFailCount = (state.authStageFailCount || 0) + 1;
       resetConnectBtn();
-      setConn("err", "auth failed");
       resetSessionTimer();
+
+      const detail = err.message || "Could not connect to Deriv.";
+      const maxAuthRetries = 3;
+      if(state.authStageFailCount > maxAuthRetries){
+        showGateError(
+          detail + " — stopped retrying after " + maxAuthRetries + " failed attempts. " +
+          "This usually means the connection is being rejected before a session can even start " +
+          "(e.g. the network this browser is on being blocked/rate-limited by Deriv, an invalid " +
+          "or expired token, or a firewall blocking outbound WebSocket traffic) rather than a " +
+          "temporary drop, so retrying automatically further is unlikely to help. " +
+          "Click \u201cAuthorize & connect\u201d to try again manually."
+        );
+        setConn("err", "auth failed — stopped retrying");
+        clearReconnectTimer();
+        return; // do NOT auto-reschedule — let the person decide when to retry
+      }
+
+      showGateError(detail);
+      setConn("err", "auth failed (attempt " + state.authStageFailCount + "/" + maxAuthRetries + ") — retrying…");
       scheduleReconnect();
     }
   }
@@ -800,6 +832,10 @@
     if(!token) return;
 
     const delay = state.reconnectDelay;
+    // Only overwrite the status line with the countdown if we're not already
+    // showing a more specific auth-failure message above it — the gateError
+    // banner (set in establishConnection's catch) is what actually carries
+    // the real reason, this is just the small connection-pill text.
     setConn("wait", "reconnecting in " + Math.round(delay/1000) + "s…");
     state.reconnectTimer = setTimeout(function(){
       state.reconnectTimer = null;
