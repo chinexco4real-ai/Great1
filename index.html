@@ -447,8 +447,8 @@
               <div class="factor-val neu" id="fRejection">none</div>
             </div>
             <div class="factor">
-              <div class="factor-name">Price vs EMA</div>
-              <div class="factor-val neu" id="fEmaZone">warming up</div>
+              <div class="factor-name">Efficiency ratio</div>
+              <div class="factor-val neu" id="fEfficiency">0.00</div>
             </div>
           </div>
         </div>
@@ -533,34 +533,15 @@
                   <div class="filter-item-sub">Requires specifically a "lower rejection" for BUY, or an "upper rejection" for SELL.</div>
                 </div>
               </label>
-              <label class="filter-item" data-filter="emaTrend">
-                <input type="checkbox" id="filterEmaTrend">
+              <label class="filter-item" data-filter="efficiency">
+                <input type="checkbox" id="filterEfficiency">
                 <div class="filter-item-body">
-                  <div class="filter-item-title">Trend filter — EMA slope</div>
-                  <div class="filter-item-sub">Requires a long-period EMA (200 ticks) to be sloping up for BUY, or down for SELL. Blocks trades against the broader trend.</div>
-                </div>
-              </label>
-              <label class="filter-item" data-filter="emaZone" id="filterEmaZoneItem">
-                <input type="checkbox" id="filterEmaZone">
-                <div class="filter-item-body">
-                  <div class="filter-item-title">Trend filter — Price vs EMA</div>
-                  <div class="filter-item-sub">
-                    Price above the EMA → BUY only. Price below the EMA → SELL only. Price touching/crossing the EMA → wait for confirmation (market may be ranging or reversing).
+                  <div class="filter-item-title">Efficiency ratio (Kaufman) ≥ threshold</div>
+                  <div class="filter-item-sub">Blocks trades when price is chopping rather than trending cleanly. Ratio = net move ÷ sum of tick-to-tick moves over the signal window, 0–1.</div>
+                  <div class="row" style="margin-top:8px; align-items:center; gap:8px;">
+                    <input type="range" id="efficiencyThreshold" min="0.1" max="0.8" step="0.05" value="0.35" style="flex:1;" onclick="event.stopPropagation()">
+                    <span class="factor-val neu" id="efficiencyThresholdVal" style="min-width:34px; text-align:right;">0.35</span>
                   </div>
-                  <div class="filter-item-sub" style="margin-top:8px;display:flex;align-items:center;gap:8px;" onclick="event.preventDefault()">
-                    <span style="color:var(--ink-dim)">EMA period</span>
-                    <input type="number" id="emaZonePeriodInput" min="2" max="500" step="1" value="50"
-                      style="width:64px;padding:5px 7px;border-radius:7px;border:1px solid var(--wire);background:var(--panel-2,#12151a);color:var(--ink);font-size:12px;"
-                      onclick="event.stopPropagation()">
-                    <span style="color:var(--ink-faint)">ticks (manually configurable, default 50)</span>
-                  </div>
-                </div>
-              </label>
-              <label class="filter-item" data-filter="macroStructure">
-                <input type="checkbox" id="filterMacroStructure">
-                <div class="filter-item-body">
-                  <div class="filter-item-title">Trend filter — higher-timeframe structure</div>
-                  <div class="filter-item-sub">Requires the swing structure over the last 250 ticks to agree with the signal direction (HH/HL for BUY, LL/LH for SELL) — not just the short 40-tick window.</div>
                 </div>
               </label>
             </div>
@@ -682,11 +663,9 @@
     filters: {              // entry confirmation filters — all checked ones must pass or the trade is rejected
       hhhl: false,
       lowerRejection: false,
-      emaTrend: false,       // long-EMA slope must agree with signal direction
-      macroStructure: false, // higher-timeframe swing structure must agree with signal direction
-      emaZone: false         // price must be clearly above/below the configurable EMA (not touching/crossing it)
+      efficiency: false
     },
-    emaZonePeriod: 50,       // manually configurable EMA period (in ticks) used by the emaZone filter
+    efficiencyThreshold: 0.35, // Kaufman Efficiency Ratio (0-1) required when the efficiency filter is checked
     alternatorMode: false,   // when on, forces strict BUY/SELL alternation regardless of signal/filters
     lastTradeDir: 0,         // direction (1/-1) of the last trade actually placed; 0 = none yet this session
     reverseMode: false,      // when on, flips the final decided direction (BUY->SELL, SELL->BUY) right before placing
@@ -795,20 +774,17 @@
   const priceMain = $("priceMain"), priceDelta = $("priceDelta"), priceMeta = $("priceMeta");
   const tapeEl = $("tape");
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
-  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection"), fEmaZone = $("fEmaZone");
+  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection"), fEfficiency = $("fEfficiency");
   const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
   const alternatorToggle = $("alternatorToggle"), alternatorHint = $("alternatorHint"), alternatorNext = $("alternatorNext");
   const reverseToggle = $("reverseToggle");
-  const filterHhHl = $("filterHhHl"), filterLowerRejection = $("filterLowerRejection");
-  const filterEmaTrend = $("filterEmaTrend"), filterMacroStructure = $("filterMacroStructure");
-  const filterEmaZone = $("filterEmaZone"), emaZonePeriodInput = $("emaZonePeriodInput");
+  const filterHhHl = $("filterHhHl"), filterLowerRejection = $("filterLowerRejection"), filterEfficiency = $("filterEfficiency");
   const filterCheckboxes = {
     hhhl: filterHhHl,
     lowerRejection: filterLowerRejection,
-    emaTrend: filterEmaTrend,
-    macroStructure: filterMacroStructure,
-    emaZone: filterEmaZone
+    efficiency: filterEfficiency
   };
+  const efficiencyThresholdInput = $("efficiencyThreshold"), efficiencyThresholdVal = $("efficiencyThresholdVal");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
   const waitTimerToggle = $("waitTimerToggle"), cycleTargetInput = $("cycleTargetInput");
@@ -1537,14 +1513,22 @@
     // --- Factor 4: rejection / snap-back detection ---
     const rejection = detectRejection(prices);
 
+    // --- Factor 5: Kaufman Efficiency Ratio (gate-only, like the trend filters
+    // below — not part of the composite score). Measures how directly price is
+    // travelling versus how much it's churning back and forth over the same
+    // window: net displacement over the window divided by the sum of every
+    // tick-to-tick move. Ranges 0-1; near 1 means a clean, efficient trend,
+    // near 0 means noisy chop where the composite score can still look strong
+    // by momentum/structure alone even though there's no real directional edge —
+    // exactly the case this filter exists to catch on a random-walk-like
+    // synthetic index. Uses the same 40-tick window as the other factors. ---
+    const efficiencyRatio = computeEfficiencyRatio(prices);
+
     // --- Trend filters (not part of the composite score — only used to gate
     // auto-trades if the corresponding checkbox is enabled): computed over
     // the FULL tick buffer, not the short 40-tick signal window, so they
     // reflect the broader trend rather than the immediate micro-move. ---
     const allPrices = ticks.map(t => t.price);
-    const emaTrend = computeEmaTrend(allPrices);
-    const macroStructure = computeMacroStructure(allPrices);
-    const emaZone = computeEmaZone(allPrices, state.emaZonePeriod);
 
     // --- Combine into weighted composite ---
     // Base direction = majority vote among momentum, velocity, structure
@@ -1580,95 +1564,27 @@
     else { level = "none"; levelLabel = "NO SIGNAL"; compositeDir = 0; }
 
     renderSignal(level, levelLabel, compositeDir, compositeScore);
-    renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, emaZone);
+    renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, efficiencyRatio);
 
-    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection, emaTrend, macroStructure, emaZone);
+    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection, efficiencyRatio);
+  }
+
+  // Kaufman Efficiency Ratio: |net change| / sum(|tick-to-tick change|), over
+  // the given price window. 0 = pure noise/chop, 1 = perfectly straight move.
+  function computeEfficiencyRatio(prices){
+    if(prices.length < 2) return 0;
+    const netChange = Math.abs(prices[prices.length - 1] - prices[0]);
+    let sumAbsChange = 0;
+    for(let i = 1; i < prices.length; i++){
+      sumAbsChange += Math.abs(prices[i] - prices[i-1]);
+    }
+    return sumAbsChange > 0 ? Math.min(1, netChange / sumAbsChange) : 0;
   }
 
   function avgAbsoluteStep(prices){
     let sum = 0, n = 0;
     for(let i=1;i<prices.length;i++){ sum += Math.abs(prices[i]-prices[i-1]); n++; }
     return n ? sum/n : 0;
-  }
-
-  // Simple EMA series over an array of prices. Returns the full EMA array
-  // (same length as prices) so slope can be read at any offset from the end.
-  function emaSeries(prices, period){
-    if(prices.length === 0) return [];
-    const k = 2 / (period + 1);
-    const out = new Array(prices.length);
-    out[0] = prices[0];
-    for(let i=1;i<prices.length;i++){
-      out[i] = prices[i]*k + out[i-1]*(1-k);
-    }
-    return out;
-  }
-
-  // Trend filter #1: slope of a long-period EMA. Uses whatever history is
-  // available (up to ~200 ticks) so it reflects the broader trend rather
-  // than the short 40-tick signal window.
-  function computeEmaTrend(allPrices){
-    const period = Math.min(200, Math.max(20, Math.floor(allPrices.length * 0.6)));
-    const lookback = Math.min(20, Math.floor(allPrices.length / 4));
-    if(allPrices.length < period + lookback || lookback < 1){
-      return { dir: 0, label: "not enough history" };
-    }
-    const ema = emaSeries(allPrices, period);
-    const now = ema[ema.length - 1];
-    const then = ema[ema.length - 1 - lookback];
-    if(now > then) return { dir: 1, label: "EMA rising" };
-    if(now < then) return { dir: -1, label: "EMA falling" };
-    return { dir: 0, label: "EMA flat" };
-  }
-
-  // Trend filter #3: price position relative to a manually-configurable EMA
-  // (default 50 ticks — a classic "50 EMA" trend line, but the user can set
-  // any period). Unlike computeEmaTrend (which looks at the EMA's slope),
-  // this looks at where the CURRENT PRICE sits relative to the EMA line:
-  //   - price clearly above the EMA  -> only BUY is allowed
-  //   - price clearly below the EMA  -> only SELL is allowed
-  //   - price touching/crossing the EMA (within a small buffer band around
-  //     the line) -> neither direction is allowed; the market may be ranging
-  //     or turning, so the filter asks the caller to wait for confirmation
-  //     rather than guess.
-  // The buffer band width is derived from recent tick volatility (average
-  // absolute step over the same window) rather than a fixed pip amount, so
-  // it scales sensibly across symbols/instruments with different tick sizes.
-  function computeEmaZone(allPrices, period){
-    period = Math.max(2, Math.floor(period) || 50);
-    if(allPrices.length < period){
-      return { state: "warming", dir: 0, label: "warming up", ema: null, price: null };
-    }
-    const ema = emaSeries(allPrices, period);
-    const currentEma = ema[ema.length - 1];
-    const currentPrice = allPrices[allPrices.length - 1];
-
-    // Buffer zone = a small multiple of the average absolute per-tick move,
-    // measured over the same lookback window used for the EMA itself. This
-    // is what "touching or crossing" means in practice: price sitting close
-    // enough to the line that normal tick noise could put it on either side.
-    const recentWindow = allPrices.slice(-period);
-    const avgStep = avgAbsoluteStep(recentWindow);
-    const buffer = Math.max(avgStep * 1.5, currentEma * 0.00005); // floor so it's never zero on a dead-flat window
-
-    const diff = currentPrice - currentEma;
-
-    if(Math.abs(diff) <= buffer){
-      return { state: "zone", dir: 0, label: "at EMA(" + period + ") — wait for confirmation", ema: currentEma, price: currentPrice };
-    }
-    if(diff > 0){
-      return { state: "above", dir: 1, label: "above EMA(" + period + ")", ema: currentEma, price: currentPrice };
-    }
-    return { state: "below", dir: -1, label: "below EMA(" + period + ")", ema: currentEma, price: currentPrice };
-  }
-
-
-  // it reflects higher-timeframe structure instead of the last few seconds.
-  function computeMacroStructure(allPrices){
-    const macroWindow = allPrices.slice(-250);
-    if(macroWindow.length < 60) return { dir: 0, strength: 0, label: "not enough history" };
-    const swings = findSwings(macroWindow);
-    return classifyStructure(swings);
   }
 
   function findSwings(prices){
@@ -1744,10 +1660,10 @@
     fVelocity.textContent = "0.000/s"; fVelocity.className="factor-val neu";
     fStructure.textContent = "flat"; fStructure.className="factor-val neu";
     fRejection.textContent = "none"; fRejection.className="factor-val neu";
-    fEmaZone.textContent = "warming up"; fEmaZone.className="factor-val neu";
+    fEfficiency.textContent = "0.00"; fEfficiency.className="factor-val neu";
   }
 
-  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, emaZone){
+  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, efficiencyRatio){
     fMomentum.textContent = runLen + " tick" + (runLen===1?"":"s") + (runDir>0?" up":runDir<0?" down":"");
     fMomentum.className = "factor-val " + (runDir>0?"pos":runDir<0?"neg":"neu");
 
@@ -1760,10 +1676,8 @@
     fRejection.textContent = rejection.detected ? rejection.label : "none";
     fRejection.className = "factor-val " + (rejection.detected ? (rejection.dir>0?"pos":"neg") : "neu");
 
-    if(emaZone){
-      fEmaZone.textContent = emaZone.label;
-      fEmaZone.className = "factor-val " + (emaZone.dir>0?"pos":emaZone.dir<0?"neg":"neu");
-    }
+    fEfficiency.textContent = efficiencyRatio.toFixed(2);
+    fEfficiency.className = "factor-val " + (efficiencyRatio >= state.efficiencyThreshold ? "pos" : "neu");
   }
 
   /* ===================== AUTO-TRADE ===================== */
@@ -1772,7 +1686,7 @@
   // Checks the user-selected entry confirmation filters against this signal's
   // structure/rejection readouts. Returns { passed, reasons } — reasons lists
   // any checked filter that failed, so the rejection can be logged clearly.
-  function checkEntryFilters(dir, structure, rejection, emaTrend, macroStructure, emaZone){
+  function checkEntryFilters(dir, structure, rejection, efficiencyRatio){
     const f = state.filters;
     const reasons = [];
 
@@ -1784,29 +1698,13 @@
       const wantLabel = dir > 0 ? "lower rejection" : "upper rejection";
       if(!rejection.detected || rejection.label !== wantLabel) reasons.push((dir>0 ? "Lower" : "Upper") + " rejection not present (got: " + (rejection.detected ? rejection.label : "none") + ")");
     }
-    if(f.emaTrend){
-      if(emaTrend.dir === 0 || emaTrend.dir !== dir) reasons.push("EMA trend not aligned (got: " + emaTrend.label + ")");
+    if(f.efficiency){
+      if(efficiencyRatio < state.efficiencyThreshold) reasons.push("Efficiency ratio too low (" + efficiencyRatio.toFixed(2) + " < " + state.efficiencyThreshold.toFixed(2) + " — price is chopping, not trending)");
     }
-    if(f.macroStructure){
-      if(macroStructure.dir === 0 || macroStructure.dir !== dir) reasons.push("Higher-timeframe structure not aligned (got: " + macroStructure.label + ")");
-    }
-    if(f.emaZone){
-      // Price above EMA -> BUY only. Price below EMA -> SELL only. Price in
-      // the "touching/crossing" buffer zone (dir === 0) -> block both
-      // directions and wait for the price to clearly separate from the line.
-      if(!emaZone || emaZone.state === "warming"){
-        reasons.push("EMA zone not ready yet (warming up)");
-      } else if(emaZone.dir === 0){
-        reasons.push("Price is touching/crossing the EMA — waiting for confirmation (" + emaZone.label + ")");
-      } else if(emaZone.dir !== dir){
-        reasons.push("Price vs EMA disagrees with signal (got: " + emaZone.label + ")");
-      }
-    }
-
     return { passed: reasons.length === 0, reasons };
   }
 
-  function maybeAutoTrade(level, dir, score, structure, rejection, emaTrend, macroStructure, emaZone){
+  function maybeAutoTrade(level, dir, score, structure, rejection, efficiencyRatio){
     if(!state.autoTrade) return;
     if(dir === 0 || level === "none") return;
     if(state.haltReason) return;
@@ -1816,7 +1714,7 @@
 
     if(strengthRank[level] < strengthRank[state.minStrength]) return;
 
-    const gate = checkEntryFilters(dir, structure, rejection, emaTrend, macroStructure, emaZone);
+    const gate = checkEntryFilters(dir, structure, rejection, efficiencyRatio);
     if(!gate.passed){
       // Filter rejections are expected/frequent (a filtered signal fires far more
       // often than it passes) — block silently rather than flooding the trade log.
@@ -2213,7 +2111,7 @@
         lossLimit: parseFloat(lossLimitInput.value) || 0,
         profitTarget: parseFloat(profitTargetInput.value) || 0,
         filters: { ...state.filters },
-        emaZonePeriod: parseInt(emaZonePeriodInput.value, 10) || 50,
+        efficiencyThreshold: parseFloat(efficiencyThresholdInput.value) || 0.35,
         alternatorMode: state.alternatorMode,
         reverseMode: state.reverseMode,
         waitTimerMode: state.waitTimerMode,
@@ -2279,10 +2177,10 @@
       });
     }
 
-    if(data.emaZonePeriod != null){
-      const v = Math.max(2, Math.min(500, parseInt(data.emaZonePeriod, 10) || 50));
-      state.emaZonePeriod = v;
-      emaZonePeriodInput.value = v;
+    if(data.efficiencyThreshold != null){
+      state.efficiencyThreshold = data.efficiencyThreshold;
+      efficiencyThresholdInput.value = data.efficiencyThreshold;
+      efficiencyThresholdVal.textContent = Number(data.efficiencyThreshold).toFixed(2);
     }
 
     if(data.alternatorMode != null){
@@ -2405,12 +2303,11 @@
     });
   });
 
-  emaZonePeriodInput.addEventListener("change", function(){
-    const v = Math.max(2, Math.min(500, parseInt(this.value, 10) || 50));
-    this.value = v;
-    state.emaZonePeriod = v;
-    savePersisted();
+  efficiencyThresholdInput.addEventListener("input", function(){
+    state.efficiencyThreshold = parseFloat(this.value) || 0;
+    efficiencyThresholdVal.textContent = state.efficiencyThreshold.toFixed(2);
   });
+  efficiencyThresholdInput.addEventListener("change", savePersisted);
 
   stakeInput.addEventListener("change", function(){ state.stake = parseFloat(this.value)||1; savePersisted(); });
   durationValueInput.addEventListener("change", function(){
