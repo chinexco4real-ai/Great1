@@ -295,6 +295,13 @@
   .filter-item-title{ font-size:12.5px; font-weight:600; color:var(--ink); }
   .filter-item-sub{ font-size:10.5px; color:var(--ink-faint); margin-top:2px; line-height:1.4; }
   .filter-reject-note{ font-size:10.5px; color:var(--fall); margin-top:4px; }
+  .vol-mode-btn{
+    flex:1; font-size:10.5px; font-weight:600; padding:6px 8px; border-radius:6px;
+    border:1px solid var(--wire); background:transparent; color:var(--ink-faint);
+    cursor:pointer; transition:border-color .15s, background .15s, color .15s;
+  }
+  .vol-mode-btn:hover{ border-color:var(--ink-faint); }
+  .vol-mode-btn.active{ border-color:var(--rise-dim); background:rgba(0,255,150,0.08); color:var(--ink); }
   #connPanel.connected{ border-color:var(--rise-dim); }
   #connPanel.connected #connRow{ opacity:0.55; pointer-events:none; }
   #connPanel.connected #connHint{ display:none; }
@@ -553,15 +560,32 @@
                 <div class="filter-item-body">
                   <div class="filter-item-title">Volatility regime — skip dead &amp; spike conditions</div>
                   <div class="filter-item-sub">Blocks trades when current tick-to-tick range sits outside a normal band vs. its own recent history: too low means a flat/asleep market, too high means a spike or whipsaw aftermath that's prone to snapping back.</div>
-                  <div class="row" style="margin-top:8px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
-                    <span class="filter-item-sub" style="min-width:28px;">Low</span>
-                    <input type="range" id="volRegimeLow" min="0" max="50" step="5" value="20" style="flex:1;">
-                    <span class="factor-val neu" id="volRegimeLowVal" style="min-width:32px; text-align:right;">20th</span>
+
+                  <div class="row" style="margin-top:10px; gap:6px;" onclick="event.stopPropagation()">
+                    <button type="button" class="vol-mode-btn" id="volModeBandBtn" data-mode="band">Band (low–high)</button>
+                    <button type="button" class="vol-mode-btn" id="volModeAboveBtn" data-mode="above">Above only</button>
                   </div>
-                  <div class="row" style="margin-top:6px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
-                    <span class="filter-item-sub" style="min-width:28px;">High</span>
-                    <input type="range" id="volRegimeHigh" min="50" max="100" step="5" value="90" style="flex:1;">
-                    <span class="factor-val neu" id="volRegimeHighVal" style="min-width:32px; text-align:right;">90th</span>
+
+                  <div id="volBandControls">
+                    <div class="row" style="margin-top:8px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
+                      <span class="filter-item-sub" style="min-width:28px;">Low</span>
+                      <input type="range" id="volRegimeLow" min="0" max="50" step="5" value="20" style="flex:1;">
+                      <span class="factor-val neu" id="volRegimeLowVal" style="min-width:32px; text-align:right;">20th</span>
+                    </div>
+                    <div class="row" style="margin-top:6px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
+                      <span class="filter-item-sub" style="min-width:28px;">High</span>
+                      <input type="range" id="volRegimeHigh" min="50" max="100" step="5" value="90" style="flex:1;">
+                      <span class="factor-val neu" id="volRegimeHighVal" style="min-width:32px; text-align:right;">90th</span>
+                    </div>
+                  </div>
+
+                  <div id="volAboveControls" style="display:none;">
+                    <div class="row" style="margin-top:8px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
+                      <span class="filter-item-sub" style="min-width:28px;">Above</span>
+                      <input type="range" id="volRegimeAbove" min="50" max="99" step="1" value="80" style="flex:1;">
+                      <span class="factor-val neu" id="volRegimeAboveVal" style="min-width:32px; text-align:right;">80th</span>
+                    </div>
+                    <div class="filter-item-sub" style="margin-top:4px;">Only trades when volatility is at or above this percentile — e.g. set to 80 to trade only during the top ~20% most active moments. Ignores the low/high band above while this mode is active.</div>
                   </div>
                 </div>
               </label>
@@ -690,6 +714,8 @@
     efficiencyThreshold: 0.35, // Kaufman Efficiency Ratio (0-1) required when the efficiency filter is checked
     volRegimeLow: 20,   // reject trades when current tick-range percentile is below this (dead/flat market)
     volRegimeHigh: 90,  // reject trades when current tick-range percentile is above this (spike/whipsaw aftermath)
+    volRegimeMode: "band", // "band" = use low/high band above | "above" = only trade when percentile >= volRegimeAbove
+    volRegimeAbove: 80, // when mode is "above", only trade when current percentile >= this (50-100)
     alternatorMode: false,   // when on, forces strict BUY/SELL alternation regardless of signal/filters
     lastTradeDir: 0,         // direction (1/-1) of the last trade actually placed; 0 = none yet this session
     reverseMode: false,      // when on, flips the final decided direction (BUY->SELL, SELL->BUY) right before placing
@@ -812,6 +838,9 @@
   const efficiencyThresholdInput = $("efficiencyThreshold"), efficiencyThresholdVal = $("efficiencyThresholdVal");
   const volRegimeLowInput = $("volRegimeLow"), volRegimeLowVal = $("volRegimeLowVal");
   const volRegimeHighInput = $("volRegimeHigh"), volRegimeHighVal = $("volRegimeHighVal");
+  const volRegimeAboveInput = $("volRegimeAbove"), volRegimeAboveVal = $("volRegimeAboveVal");
+  const volModeBandBtn = $("volModeBandBtn"), volModeAboveBtn = $("volModeAboveBtn");
+  const volBandControls = $("volBandControls"), volAboveControls = $("volAboveControls");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
   const waitTimerToggle = $("waitTimerToggle"), cycleTargetInput = $("cycleTargetInput");
@@ -1757,9 +1786,11 @@
       fVolRegime.textContent = "warming up";
       fVolRegime.className = "factor-val neu";
     } else {
-      const inBand = volPercentile >= state.volRegimeLow && volPercentile <= state.volRegimeHigh;
+      const passes = state.volRegimeMode === "above"
+        ? volPercentile >= state.volRegimeAbove
+        : (volPercentile >= state.volRegimeLow && volPercentile <= state.volRegimeHigh);
       fVolRegime.textContent = volPercentile + "th pct";
-      fVolRegime.className = "factor-val " + (inBand ? "pos" : "neg");
+      fVolRegime.className = "factor-val " + (passes ? "pos" : "neg");
     }
   }
 
@@ -1785,9 +1816,17 @@
       if(efficiencyRatio < state.efficiencyThreshold) reasons.push("Efficiency ratio too low (" + efficiencyRatio.toFixed(2) + " < " + state.efficiencyThreshold.toFixed(2) + " — price is chopping, not trending)");
     }
     if(f.volRegime){
-      if(volPercentile === null) reasons.push("Volatility regime not established yet (warming up tick history)");
-      else if(volPercentile < state.volRegimeLow) reasons.push("Volatility too low (" + volPercentile + "th pct < " + state.volRegimeLow + "th — market is flat/asleep)");
-      else if(volPercentile > state.volRegimeHigh) reasons.push("Volatility too high (" + volPercentile + "th pct > " + state.volRegimeHigh + "th — likely spike/whipsaw aftermath)");
+      if(volPercentile === null){
+        reasons.push("Volatility regime not established yet (warming up tick history)");
+      } else if(state.volRegimeMode === "above"){
+        // Above-only mode: single floor, no ceiling — the low/high band is
+        // intentionally not applied here, so the two modes never conflict.
+        if(volPercentile < state.volRegimeAbove) reasons.push("Volatility below floor (" + volPercentile + "th pct < " + state.volRegimeAbove + "th — Above-only mode requires spikes at or above this level)");
+      } else {
+        // Band mode: reject both too-flat and too-spiky.
+        if(volPercentile < state.volRegimeLow) reasons.push("Volatility too low (" + volPercentile + "th pct < " + state.volRegimeLow + "th — market is flat/asleep)");
+        else if(volPercentile > state.volRegimeHigh) reasons.push("Volatility too high (" + volPercentile + "th pct > " + state.volRegimeHigh + "th — likely spike/whipsaw aftermath)");
+      }
     }
     return { passed: reasons.length === 0, reasons };
   }
@@ -2202,6 +2241,8 @@
         efficiencyThreshold: parseFloat(efficiencyThresholdInput.value) || 0.35,
         volRegimeLow: parseInt(volRegimeLowInput.value, 10) || 20,
         volRegimeHigh: parseInt(volRegimeHighInput.value, 10) || 90,
+        volRegimeMode: state.volRegimeMode,
+        volRegimeAbove: parseInt(volRegimeAboveInput.value, 10) || 80,
         alternatorMode: state.alternatorMode,
         reverseMode: state.reverseMode,
         waitTimerMode: state.waitTimerMode,
@@ -2282,6 +2323,14 @@
       state.volRegimeHigh = data.volRegimeHigh;
       volRegimeHighInput.value = data.volRegimeHigh;
       volRegimeHighVal.textContent = data.volRegimeHigh + "th";
+    }
+    if(data.volRegimeAbove != null){
+      state.volRegimeAbove = data.volRegimeAbove;
+      volRegimeAboveInput.value = data.volRegimeAbove;
+      volRegimeAboveVal.textContent = data.volRegimeAbove + "th";
+    }
+    if(data.volRegimeMode === "band" || data.volRegimeMode === "above"){
+      setVolRegimeMode(data.volRegimeMode);
     }
 
     if(data.alternatorMode != null){
@@ -2426,6 +2475,26 @@
   });
   volRegimeHighInput.addEventListener("change", savePersisted);
 
+  volRegimeAboveInput.addEventListener("input", function(){
+    const v = parseInt(this.value, 10) || 50;
+    state.volRegimeAbove = v;
+    volRegimeAboveVal.textContent = v + "th";
+  });
+  volRegimeAboveInput.addEventListener("change", savePersisted);
+
+  // Band / Above mode switch — mutually exclusive by design: only one of the
+  // two control groups is ever visible or applied at a time, so there's no
+  // way for the low/high band and the single "above" threshold to conflict.
+  function setVolRegimeMode(mode){
+    state.volRegimeMode = mode;
+    volModeBandBtn.classList.toggle("active", mode === "band");
+    volModeAboveBtn.classList.toggle("active", mode === "above");
+    volBandControls.style.display = mode === "band" ? "" : "none";
+    volAboveControls.style.display = mode === "above" ? "" : "none";
+  }
+  volModeBandBtn.addEventListener("click", function(){ setVolRegimeMode("band"); savePersisted(); });
+  volModeAboveBtn.addEventListener("click", function(){ setVolRegimeMode("above"); savePersisted(); });
+
   stakeInput.addEventListener("change", function(){ state.stake = parseFloat(this.value)||1; savePersisted(); });
   durationValueInput.addEventListener("change", function(){
     state.durationValue = Math.max(1, parseInt(this.value,10) || 1);
@@ -2504,6 +2573,7 @@
   });
 
   /* ===================== INIT ===================== */
+  setVolRegimeMode("band"); // default; loadPersisted() below will override if a saved mode exists
   loadPersisted();
   updateDurationHint();
   updateCycleWaitHint();
