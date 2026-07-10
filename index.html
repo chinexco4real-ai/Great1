@@ -450,6 +450,10 @@
               <div class="factor-name">Efficiency ratio</div>
               <div class="factor-val neu" id="fEfficiency">0.00</div>
             </div>
+            <div class="factor">
+              <div class="factor-name">Volatility regime</div>
+              <div class="factor-val neu" id="fVolRegime">— pct</div>
+            </div>
           </div>
         </div>
 
@@ -541,6 +545,23 @@
                   <div class="row" style="margin-top:8px; align-items:center; gap:8px;">
                     <input type="range" id="efficiencyThreshold" min="0.1" max="0.8" step="0.05" value="0.35" style="flex:1;" onclick="event.stopPropagation()">
                     <span class="factor-val neu" id="efficiencyThresholdVal" style="min-width:34px; text-align:right;">0.35</span>
+                  </div>
+                </div>
+              </label>
+              <label class="filter-item" data-filter="volRegime">
+                <input type="checkbox" id="filterVolRegime">
+                <div class="filter-item-body">
+                  <div class="filter-item-title">Volatility regime — skip dead &amp; spike conditions</div>
+                  <div class="filter-item-sub">Blocks trades when current tick-to-tick range sits outside a normal band vs. its own recent history: too low means a flat/asleep market, too high means a spike or whipsaw aftermath that's prone to snapping back.</div>
+                  <div class="row" style="margin-top:8px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
+                    <span class="filter-item-sub" style="min-width:28px;">Low</span>
+                    <input type="range" id="volRegimeLow" min="0" max="50" step="5" value="20" style="flex:1;">
+                    <span class="factor-val neu" id="volRegimeLowVal" style="min-width:32px; text-align:right;">20th</span>
+                  </div>
+                  <div class="row" style="margin-top:6px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
+                    <span class="filter-item-sub" style="min-width:28px;">High</span>
+                    <input type="range" id="volRegimeHigh" min="50" max="100" step="5" value="90" style="flex:1;">
+                    <span class="factor-val neu" id="volRegimeHighVal" style="min-width:32px; text-align:right;">90th</span>
                   </div>
                 </div>
               </label>
@@ -663,9 +684,12 @@
     filters: {              // entry confirmation filters — all checked ones must pass or the trade is rejected
       hhhl: false,
       lowerRejection: false,
-      efficiency: false
+      efficiency: false,
+      volRegime: false
     },
     efficiencyThreshold: 0.35, // Kaufman Efficiency Ratio (0-1) required when the efficiency filter is checked
+    volRegimeLow: 20,   // reject trades when current tick-range percentile is below this (dead/flat market)
+    volRegimeHigh: 90,  // reject trades when current tick-range percentile is above this (spike/whipsaw aftermath)
     alternatorMode: false,   // when on, forces strict BUY/SELL alternation regardless of signal/filters
     lastTradeDir: 0,         // direction (1/-1) of the last trade actually placed; 0 = none yet this session
     reverseMode: false,      // when on, flips the final decided direction (BUY->SELL, SELL->BUY) right before placing
@@ -774,17 +798,20 @@
   const priceMain = $("priceMain"), priceDelta = $("priceDelta"), priceMeta = $("priceMeta");
   const tapeEl = $("tape");
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
-  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection"), fEfficiency = $("fEfficiency");
+  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection"), fEfficiency = $("fEfficiency"), fVolRegime = $("fVolRegime");
   const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
   const alternatorToggle = $("alternatorToggle"), alternatorHint = $("alternatorHint"), alternatorNext = $("alternatorNext");
   const reverseToggle = $("reverseToggle");
-  const filterHhHl = $("filterHhHl"), filterLowerRejection = $("filterLowerRejection"), filterEfficiency = $("filterEfficiency");
+  const filterHhHl = $("filterHhHl"), filterLowerRejection = $("filterLowerRejection"), filterEfficiency = $("filterEfficiency"), filterVolRegime = $("filterVolRegime");
   const filterCheckboxes = {
     hhhl: filterHhHl,
     lowerRejection: filterLowerRejection,
-    efficiency: filterEfficiency
+    efficiency: filterEfficiency,
+    volRegime: filterVolRegime
   };
   const efficiencyThresholdInput = $("efficiencyThreshold"), efficiencyThresholdVal = $("efficiencyThresholdVal");
+  const volRegimeLowInput = $("volRegimeLow"), volRegimeLowVal = $("volRegimeLowVal");
+  const volRegimeHighInput = $("volRegimeHigh"), volRegimeHighVal = $("volRegimeHighVal");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
   const waitTimerToggle = $("waitTimerToggle"), cycleTargetInput = $("cycleTargetInput");
@@ -1530,6 +1557,17 @@
     // reflect the broader trend rather than the immediate micro-move. ---
     const allPrices = ticks.map(t => t.price);
 
+    // --- Factor 6: volatility regime (gate-only, like the efficiency ratio
+    // above). Deriv's synthetic indices are built to produce periodic large
+    // spikes on top of otherwise steady background volatility — right as a
+    // spike lands, momentum/velocity/structure often all light up together,
+    // but that's exactly the moment least likely to hold: the very next ticks
+    // are often the mean-reversion snapback, not a new trend. This ranks the
+    // current short-window tick range against its own recent history (the
+    // tick-native analogue of an ATR percentile) so both dead/flat chop and
+    // fresh-spike aftermath can be filtered out, independent of direction. ---
+    const volPercentile = computeVolatilityPercentile(allPrices);
+
     // --- Combine into weighted composite ---
     // Base direction = majority vote among momentum, velocity, structure
     const votes = [ [runDir, momentumScore*1.0], [velocityDir, velocityScore*0.9], [structureDir, structureScore*1.1] ];
@@ -1564,9 +1602,9 @@
     else { level = "none"; levelLabel = "NO SIGNAL"; compositeDir = 0; }
 
     renderSignal(level, levelLabel, compositeDir, compositeScore);
-    renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, efficiencyRatio);
+    renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, efficiencyRatio, volPercentile);
 
-    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection, efficiencyRatio);
+    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection, efficiencyRatio, volPercentile);
   }
 
   // Kaufman Efficiency Ratio: |net change| / sum(|tick-to-tick change|), over
@@ -1579,6 +1617,41 @@
       sumAbsChange += Math.abs(prices[i] - prices[i-1]);
     }
     return sumAbsChange > 0 ? Math.min(1, netChange / sumAbsChange) : 0;
+  }
+
+  // Volatility regime percentile: builds a rolling series of local tick-range
+  // values (tick-native stand-in for ATR — no OHLC bars needed) across the
+  // full tick buffer, then ranks the most recent reading against that
+  // series' own history. Returns 0-100, or null if there isn't enough
+  // buffer yet to form a meaningful distribution.
+  //   - local range for window i = max(prices in an 8-tick slice) - min(...)
+  //   - percentile = % of historical windows the current window's range beats
+  // A tick-native analogue of "ATR percentile over the last N periods".
+  function computeVolatilityPercentile(prices){
+    const RANGE_WINDOW = 8;   // ticks per local range sample
+    const MIN_SAMPLES = 20;   // need at least this many range samples to rank against
+    if(prices.length < RANGE_WINDOW + MIN_SAMPLES) return null;
+
+    const ranges = [];
+    for(let i = RANGE_WINDOW; i <= prices.length; i++){
+      const slice = prices.slice(i - RANGE_WINDOW, i);
+      ranges.push(Math.max(...slice) - Math.min(...slice));
+    }
+    const current = ranges[ranges.length - 1];
+    const history = ranges.slice(0, -1); // everything except the current reading
+    if(history.length < MIN_SAMPLES) return null;
+
+    // Mean-rank percentile: strictly-below counts fully, ties count as half.
+    // This matters specifically for the flat/dead-market case — if every
+    // historical range is 0 and the current one is also 0, a naive "<=" count
+    // would wrongly report the 100th percentile (looks like a spike) when the
+    // honest answer is "perfectly average for this market" — i.e. the 50th.
+    let below = 0, tied = 0;
+    for(let i = 0; i < history.length; i++){
+      if(history[i] < current) below++;
+      else if(history[i] === current) tied++;
+    }
+    return Math.round(((below + tied * 0.5) / history.length) * 100);
   }
 
   function avgAbsoluteStep(prices){
@@ -1661,9 +1734,10 @@
     fStructure.textContent = "flat"; fStructure.className="factor-val neu";
     fRejection.textContent = "none"; fRejection.className="factor-val neu";
     fEfficiency.textContent = "0.00"; fEfficiency.className="factor-val neu";
+    fVolRegime.textContent = "— pct"; fVolRegime.className="factor-val neu";
   }
 
-  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, efficiencyRatio){
+  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, efficiencyRatio, volPercentile){
     fMomentum.textContent = runLen + " tick" + (runLen===1?"":"s") + (runDir>0?" up":runDir<0?" down":"");
     fMomentum.className = "factor-val " + (runDir>0?"pos":runDir<0?"neg":"neu");
 
@@ -1678,6 +1752,15 @@
 
     fEfficiency.textContent = efficiencyRatio.toFixed(2);
     fEfficiency.className = "factor-val " + (efficiencyRatio >= state.efficiencyThreshold ? "pos" : "neu");
+
+    if(volPercentile === null){
+      fVolRegime.textContent = "warming up";
+      fVolRegime.className = "factor-val neu";
+    } else {
+      const inBand = volPercentile >= state.volRegimeLow && volPercentile <= state.volRegimeHigh;
+      fVolRegime.textContent = volPercentile + "th pct";
+      fVolRegime.className = "factor-val " + (inBand ? "pos" : "neg");
+    }
   }
 
   /* ===================== AUTO-TRADE ===================== */
@@ -1686,7 +1769,7 @@
   // Checks the user-selected entry confirmation filters against this signal's
   // structure/rejection readouts. Returns { passed, reasons } — reasons lists
   // any checked filter that failed, so the rejection can be logged clearly.
-  function checkEntryFilters(dir, structure, rejection, efficiencyRatio){
+  function checkEntryFilters(dir, structure, rejection, efficiencyRatio, volPercentile){
     const f = state.filters;
     const reasons = [];
 
@@ -1701,10 +1784,15 @@
     if(f.efficiency){
       if(efficiencyRatio < state.efficiencyThreshold) reasons.push("Efficiency ratio too low (" + efficiencyRatio.toFixed(2) + " < " + state.efficiencyThreshold.toFixed(2) + " — price is chopping, not trending)");
     }
+    if(f.volRegime){
+      if(volPercentile === null) reasons.push("Volatility regime not established yet (warming up tick history)");
+      else if(volPercentile < state.volRegimeLow) reasons.push("Volatility too low (" + volPercentile + "th pct < " + state.volRegimeLow + "th — market is flat/asleep)");
+      else if(volPercentile > state.volRegimeHigh) reasons.push("Volatility too high (" + volPercentile + "th pct > " + state.volRegimeHigh + "th — likely spike/whipsaw aftermath)");
+    }
     return { passed: reasons.length === 0, reasons };
   }
 
-  function maybeAutoTrade(level, dir, score, structure, rejection, efficiencyRatio){
+  function maybeAutoTrade(level, dir, score, structure, rejection, efficiencyRatio, volPercentile){
     if(!state.autoTrade) return;
     if(dir === 0 || level === "none") return;
     if(state.haltReason) return;
@@ -1714,7 +1802,7 @@
 
     if(strengthRank[level] < strengthRank[state.minStrength]) return;
 
-    const gate = checkEntryFilters(dir, structure, rejection, efficiencyRatio);
+    const gate = checkEntryFilters(dir, structure, rejection, efficiencyRatio, volPercentile);
     if(!gate.passed){
       // Filter rejections are expected/frequent (a filtered signal fires far more
       // often than it passes) — block silently rather than flooding the trade log.
@@ -2112,6 +2200,8 @@
         profitTarget: parseFloat(profitTargetInput.value) || 0,
         filters: { ...state.filters },
         efficiencyThreshold: parseFloat(efficiencyThresholdInput.value) || 0.35,
+        volRegimeLow: parseInt(volRegimeLowInput.value, 10) || 20,
+        volRegimeHigh: parseInt(volRegimeHighInput.value, 10) || 90,
         alternatorMode: state.alternatorMode,
         reverseMode: state.reverseMode,
         waitTimerMode: state.waitTimerMode,
@@ -2181,6 +2271,17 @@
       state.efficiencyThreshold = data.efficiencyThreshold;
       efficiencyThresholdInput.value = data.efficiencyThreshold;
       efficiencyThresholdVal.textContent = Number(data.efficiencyThreshold).toFixed(2);
+    }
+
+    if(data.volRegimeLow != null){
+      state.volRegimeLow = data.volRegimeLow;
+      volRegimeLowInput.value = data.volRegimeLow;
+      volRegimeLowVal.textContent = data.volRegimeLow + "th";
+    }
+    if(data.volRegimeHigh != null){
+      state.volRegimeHigh = data.volRegimeHigh;
+      volRegimeHighInput.value = data.volRegimeHigh;
+      volRegimeHighVal.textContent = data.volRegimeHigh + "th";
     }
 
     if(data.alternatorMode != null){
@@ -2308,6 +2409,22 @@
     efficiencyThresholdVal.textContent = state.efficiencyThreshold.toFixed(2);
   });
   efficiencyThresholdInput.addEventListener("change", savePersisted);
+
+  volRegimeLowInput.addEventListener("input", function(){
+    let v = parseInt(this.value, 10) || 0;
+    if(v > state.volRegimeHigh){ v = state.volRegimeHigh; this.value = v; } // keep low <= high
+    state.volRegimeLow = v;
+    volRegimeLowVal.textContent = v + "th";
+  });
+  volRegimeLowInput.addEventListener("change", savePersisted);
+
+  volRegimeHighInput.addEventListener("input", function(){
+    let v = parseInt(this.value, 10) || 100;
+    if(v < state.volRegimeLow){ v = state.volRegimeLow; this.value = v; } // keep high >= low
+    state.volRegimeHigh = v;
+    volRegimeHighVal.textContent = v + "th";
+  });
+  volRegimeHighInput.addEventListener("change", savePersisted);
 
   stakeInput.addEventListener("change", function(){ state.stake = parseFloat(this.value)||1; savePersisted(); });
   durationValueInput.addEventListener("change", function(){
