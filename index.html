@@ -458,8 +458,8 @@
               <div class="factor-val neu" id="fVolRegime">— pct</div>
             </div>
             <div class="factor">
-              <div class="factor-name">Trend persistence (r)</div>
-              <div class="factor-val neu" id="fPersistence">— </div>
+              <div class="factor-name">Price exhaustion (z)</div>
+              <div class="factor-val neu" id="fExtreme">— z</div>
             </div>
           </div>
         </div>
@@ -578,18 +578,18 @@
                   </div>
                 </div>
               </label>
-              <label class="filter-item" data-filter="persistence">
-                <input type="checkbox" id="filterPersistence">
+              <label class="filter-item" data-filter="extremeEntry">
+                <input type="checkbox" id="filterExtremeEntry">
                 <div class="filter-item-body">
-                  <div class="filter-item-title">Trend persistence — skip mean-reverting regimes</div>
-                  <div class="filter-item-sub">Measures lag-1 autocorrelation of tick-to-tick returns over the recent tick buffer. Positive values mean moves tend to be followed by same-direction moves (a genuine trending regime, where momentum/structure signals are trustworthy). Near-zero or negative means the index is currently mean-reverting tick-to-tick — exactly when momentum/HH-HL signals tend to be traps. Blocks the trade unless persistence is at or above the threshold below, independent of direction.</div>
+                  <div class="filter-item-title">Extreme entry — BUY only when exhausted high, SELL only when exhausted low</div>
+                  <div class="filter-item-sub">Genuine exhaustion filter, not "last tick was a new high." Measures the net price move over the last 8 ticks, then compares it to how big 8-tick moves have typically been over the preceding 60 ticks (a z-score). BUY is only allowed when the current 8-tick run has moved further upward than typical runs of that length — a real, statistically unusual extension, not just an ordinary continuing trend. SELL requires the mirror: a run that's moved further downward than usual. An ordinary mid-trend tick that simply continues a normal-sized run will not trigger this; only a stretch that has actually outpaced its own recent normal will.</div>
 
-                  <div class="row" style="margin-top:10px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
-                    <span class="filter-item-sub" style="min-width:60px;">Min. r</span>
-                    <input type="range" id="persistenceMinInput" min="-0.30" max="0.50" step="0.02" value="0.10" style="flex:1;">
-                    <span class="factor-val neu" id="persistenceMinVal" style="min-width:40px; text-align:right;">+0.10</span>
+                  <div class="row" style="margin-top:10px; gap:6px;" onclick="event.stopPropagation()">
+                    <button type="button" class="vol-mode-btn" id="exhaustionZ2Btn" data-z="2">2z (standard)</button>
+                    <button type="button" class="vol-mode-btn" id="exhaustionZ3Btn" data-z="3">3z (sharp)</button>
+                    <button type="button" class="vol-mode-btn" id="exhaustionZ4Btn" data-z="4">4z (very sharp only)</button>
                   </div>
-                  <div class="filter-item-sub" style="margin-top:4px;">Higher = stricter (fewer, more reliably-trending trades). 0 = pure random walk. Typical usable range +0.05 to +0.25.</div>
+                  <div class="filter-item-sub" style="margin-top:4px;">2z is the standard outlier threshold — catches most genuine exhaustion moves. 4z only allows the sharpest, rarest spikes/drops through — far fewer trades, but each one is a much more extreme move.</div>
                 </div>
               </label>
             </div>
@@ -712,12 +712,12 @@
       hhhl: false,
       lowerRejection: false,
       volRegime: false,
-      persistence: false
+      extremeEntry: false
     },
-    persistenceMin: 0.10,  // minimum lag-1 tick-return autocorrelation required to allow a trade (regime filter)
     volRegimeLow: 20,   // reject trades when current tick-range percentile is below this (dead/flat market)
     volRegimeHigh: 90,  // reject trades when current tick-range percentile is above this (spike/whipsaw aftermath)
     volRegimeMode: "band", // "band" = use low/high band above | "above" = only trade when percentile >= volRegimeAbove
+    exhaustionZ: 2,        // extreme entry filter strictness — 2 (standard outlier threshold), 3 (sharp), or 4 (only very sharp spikes/drops)
     volRegimeAbove: 80, // when mode is "above", only trade when current percentile >= this (50-100)
     alternatorMode: false,   // when on, forces strict BUY/SELL alternation regardless of signal/filters
     lastTradeDir: 0,         // direction (1/-1) of the last trade actually placed; 0 = none yet this session
@@ -827,22 +827,22 @@
   const priceMain = $("priceMain"), priceDelta = $("priceDelta"), priceMeta = $("priceMeta");
   const tapeEl = $("tape");
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
-  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection"), fVolRegime = $("fVolRegime"), fPersistence = $("fPersistence");
+  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection"), fVolRegime = $("fVolRegime"), fExtreme = $("fExtreme");
   const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
   const alternatorToggle = $("alternatorToggle"), alternatorHint = $("alternatorHint"), alternatorNext = $("alternatorNext");
   const reverseToggle = $("reverseToggle");
-  const filterHhHl = $("filterHhHl"), filterLowerRejection = $("filterLowerRejection"), filterVolRegime = $("filterVolRegime"), filterPersistence = $("filterPersistence");
-  const persistenceMinInput = $("persistenceMinInput"), persistenceMinVal = $("persistenceMinVal");
+  const filterHhHl = $("filterHhHl"), filterLowerRejection = $("filterLowerRejection"), filterVolRegime = $("filterVolRegime"), filterExtremeEntry = $("filterExtremeEntry");
   const filterCheckboxes = {
     hhhl: filterHhHl,
     lowerRejection: filterLowerRejection,
     volRegime: filterVolRegime,
-    persistence: filterPersistence
+    extremeEntry: filterExtremeEntry
   };
   const volRegimeLowInput = $("volRegimeLow"), volRegimeLowVal = $("volRegimeLowVal");
   const volRegimeHighInput = $("volRegimeHigh"), volRegimeHighVal = $("volRegimeHighVal");
   const volRegimeAboveInput = $("volRegimeAbove"), volRegimeAboveVal = $("volRegimeAboveVal");
   const volModeBandBtn = $("volModeBandBtn"), volModeAboveBtn = $("volModeAboveBtn");
+  const exhaustionZ2Btn = $("exhaustionZ2Btn"), exhaustionZ3Btn = $("exhaustionZ3Btn"), exhaustionZ4Btn = $("exhaustionZ4Btn");
   const volBandControls = $("volBandControls"), volAboveControls = $("volAboveControls");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
@@ -1589,9 +1589,10 @@
     // independent of direction. ---
     const volPercentile = computeVolatilityPercentile(allPrices);
 
-    // --- Factor 6: trend persistence (gate-only, same as volatility regime —
-    // not part of the composite score, only used to gate auto-trades). ---
-    const persistence = computeAutocorrelation(allPrices);
+    // --- Factor 7: extreme entry (gate-only) — is the current move actually
+    // stretched/exhausted vs. its own recent normal, used to require
+    // BUY-at-exhausted-highs / SELL-at-exhausted-lows. ---
+    const priceExhaustion = computePriceExhaustion(allPrices, EXHAUSTION_BASELINE, EXHAUSTION_RUN_WINDOW);
 
     // --- Combine into weighted composite ---
     // Base direction = majority vote among momentum, velocity, structure
@@ -1627,9 +1628,9 @@
     else { level = "none"; levelLabel = "NO SIGNAL"; compositeDir = 0; }
 
     renderSignal(level, levelLabel, compositeDir, compositeScore);
-    renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, volPercentile, persistence);
+    renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, volPercentile, priceExhaustion);
 
-    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection, volPercentile, persistence);
+    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection, volPercentile, priceExhaustion);
   }
 
   // Volatility regime percentile: builds a rolling series of local tick-range
@@ -1667,45 +1668,50 @@
     return Math.round(((below + tied * 0.5) / history.length) * 100);
   }
 
-  // Lag-1 autocorrelation of tick-to-tick returns — a regime filter, not a
-  // direction signal. Unlike momentum/velocity/structure (which all assume
-  // "recent direction continues"), this asks whether that assumption is even
-  // valid for THIS index right now:
-  //   - positive r: moves tend to be followed by same-direction moves —
-  //     a genuine trending regime, where the existing factors are trustworthy.
-  //   - r near zero: random walk, no exploitable persistence either way.
-  //   - negative r: moves tend to reverse tick-to-tick — a mean-reverting
-  //     regime, exactly when a momentum/HH-HL run is most likely to be about
-  //     to snap back rather than continue.
-  // Computed over a wider window than the 40-tick signal window on purpose:
-  // regime character is a slower-moving property than the immediate signal,
-  // so a noisier/shorter estimate would just be re-measuring the same move
-  // the other factors already used.
-  function computeAutocorrelation(prices){
-    const WINDOW = 80;      // ticks of returns to estimate over
-    const MIN_RETURNS = 30; // need at least this many non-degenerate returns
-    if(prices.length < WINDOW + 1) return null;
+  // Baseline history length and run-window used to measure exhaustion.
+  // Fixed, standard values — not adjustable. The strictness threshold itself
+  // (state.exhaustionZ) IS adjustable via the UI: 2 = standard outlier
+  // convention for "unusually far from normal," 4 = only very sharp,
+  // rarer spikes/drops.
+  const EXHAUSTION_BASELINE = 60;
+  const EXHAUSTION_RUN_WINDOW = 8; // matches the momentum factor's saturation window
 
-    const slice = prices.slice(-(WINDOW + 1));
-    const returns = [];
-    for(let i = 1; i < slice.length; i++) returns.push(slice[i] - slice[i-1]);
-    if(returns.length < MIN_RETURNS) return null;
+  // Is the current move actually STRETCHED, or did price just tick up last?
+  // A naive "am I the max of the last N ticks" or "how far from the mean of
+  // single-tick noise" both fail: a monotonic run's last tick is almost
+  // always its own max, and comparing net drift to single-tick noise makes
+  // even an ordinary trend read as wildly "exhausted" (net drift over a
+  // window naturally dwarfs single-tick jitter).
+  //
+  // What actually distinguishes exhaustion from ordinary trending: is THIS
+  // run bigger than runs of the same length usually are? So this measures
+  // the net price change over the last EXHAUSTION_RUN_WINDOW ticks, then
+  // z-scores that against the distribution of same-length net changes
+  // sampled across a longer baseline history. A positive z means this run
+  // has traveled further upward than typical runs of its length — a
+  // genuine, statistically unusual extension, not just "price went up."
+  function computePriceExhaustion(prices, baseline, runWindow){
+    const MIN_SAMPLES = 15;
+    if(prices.length < baseline + runWindow) return null;
 
-    const a = returns.slice(0, -1);   // r[i-1]
-    const b = returns.slice(1);       // r[i]
-    const n = a.length;
-    const meanA = a.reduce((s,v)=>s+v,0) / n;
-    const meanB = b.reduce((s,v)=>s+v,0) / n;
+    const slice = prices.slice(-(baseline + runWindow));
+    const current = slice[slice.length - 1];
+    const currentStart = slice[slice.length - 1 - runWindow];
+    const currentMove = current - currentStart;
 
-    let cov = 0, varA = 0, varB = 0;
-    for(let i = 0; i < n; i++){
-      const da = a[i] - meanA, db = b[i] - meanB;
-      cov += da * db;
-      varA += da * da;
-      varB += db * db;
+    // sample historical net moves of the same window length across the baseline
+    const historical = [];
+    for(let i = 0; i <= slice.length - runWindow - 1; i++){
+      historical.push(slice[i + runWindow] - slice[i]);
     }
-    if(varA === 0 || varB === 0) return 0; // fully flat window — no persistence, not undefined
-    return cov / Math.sqrt(varA * varB); // Pearson correlation, range [-1, 1]
+    if(historical.length < MIN_SAMPLES) return null;
+
+    const mean = historical.reduce((s,v)=>s+v,0) / historical.length;
+    const variance = historical.reduce((s,v)=>s+(v-mean)*(v-mean),0) / historical.length;
+    const sd = Math.sqrt(variance);
+    if(sd === 0) return 0; // perfectly flat baseline — no exhaustion possible
+
+    return (currentMove - mean) / sd;
   }
 
   function avgAbsoluteStep(prices){
@@ -1788,10 +1794,10 @@
     fStructure.textContent = "flat"; fStructure.className="factor-val neu";
     fRejection.textContent = "none"; fRejection.className="factor-val neu";
     fVolRegime.textContent = "— pct"; fVolRegime.className="factor-val neu";
-    fPersistence.textContent = "— "; fPersistence.className="factor-val neu";
+    fExtreme.textContent = "— z"; fExtreme.className="factor-val neu";
   }
 
-  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, volPercentile, persistence){
+  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, volPercentile, priceExhaustion){
     fMomentum.textContent = runLen + " tick" + (runLen===1?"":"s") + (runDir>0?" up":runDir<0?" down":"");
     fMomentum.className = "factor-val " + (runDir>0?"pos":runDir<0?"neg":"neu");
 
@@ -1815,13 +1821,14 @@
       fVolRegime.className = "factor-val " + (passes ? "pos" : "neg");
     }
 
-    if(persistence === null){
-      fPersistence.textContent = "warming up";
-      fPersistence.className = "factor-val neu";
+    if(priceExhaustion === null){
+      fExtreme.textContent = "warming up";
+      fExtreme.className = "factor-val neu";
     } else {
-      const passesPersistence = persistence >= state.persistenceMin;
-      fPersistence.textContent = (persistence>=0?"+":"") + persistence.toFixed(2);
-      fPersistence.className = "factor-val " + (passesPersistence ? "pos" : "neg");
+      const atHigh = priceExhaustion >= state.exhaustionZ;
+      const atLow = priceExhaustion <= -state.exhaustionZ;
+      fExtreme.textContent = (priceExhaustion>=0?"+":"") + priceExhaustion.toFixed(2) + "z" + (atHigh ? " (exhausted high)" : atLow ? " (exhausted low)" : "");
+      fExtreme.className = "factor-val " + (atHigh ? "pos" : atLow ? "neg" : "neu");
     }
   }
 
@@ -1831,7 +1838,7 @@
   // Checks the user-selected entry confirmation filters against this signal's
   // structure/rejection readouts. Returns { passed, reasons } — reasons lists
   // any checked filter that failed, so the rejection can be logged clearly.
-  function checkEntryFilters(dir, structure, rejection, volPercentile, persistence){
+  function checkEntryFilters(dir, structure, rejection, volPercentile, priceExhaustion){
     const f = state.filters;
     const reasons = [];
 
@@ -1856,17 +1863,19 @@
         else if(volPercentile > state.volRegimeHigh) reasons.push("Volatility too high (" + volPercentile + "th pct > " + state.volRegimeHigh + "th — likely spike/whipsaw aftermath)");
       }
     }
-    if(f.persistence){
-      if(persistence === null){
-        reasons.push("Trend persistence not established yet (warming up tick history)");
-      } else if(persistence < state.persistenceMin){
-        reasons.push("Trend persistence too low (r=" + persistence.toFixed(2) + " < " + state.persistenceMin.toFixed(2) + " — market is currently mean-reverting tick-to-tick, not trending)");
+    if(f.extremeEntry){
+      if(priceExhaustion === null){
+        reasons.push("Extreme entry not established yet (warming up tick history)");
+      } else if(dir > 0 && priceExhaustion < state.exhaustionZ){
+        reasons.push("Not an exhausted high (price is " + priceExhaustion.toFixed(2) + "z from its " + EXHAUSTION_BASELINE + "-tick baseline, need >= +" + state.exhaustionZ + "z for BUY)");
+      } else if(dir < 0 && priceExhaustion > -state.exhaustionZ){
+        reasons.push("Not an exhausted low (price is " + priceExhaustion.toFixed(2) + "z from its " + EXHAUSTION_BASELINE + "-tick baseline, need <= -" + state.exhaustionZ + "z for SELL)");
       }
     }
     return { passed: reasons.length === 0, reasons };
   }
 
-  function maybeAutoTrade(level, dir, score, structure, rejection, volPercentile, persistence){
+  function maybeAutoTrade(level, dir, score, structure, rejection, volPercentile, priceExhaustion){
     if(!state.autoTrade) return;
     if(dir === 0 || level === "none") return;
     if(state.haltReason) return;
@@ -1876,7 +1885,7 @@
 
     if(strengthRank[level] < strengthRank[state.minStrength]) return;
 
-    const gate = checkEntryFilters(dir, structure, rejection, volPercentile, persistence);
+    const gate = checkEntryFilters(dir, structure, rejection, volPercentile, priceExhaustion);
     if(!gate.passed){
       // Filter rejections are expected/frequent (a filtered signal fires far more
       // often than it passes) — block silently rather than flooding the trade log.
@@ -2276,8 +2285,8 @@
         volRegimeLow: parseInt(volRegimeLowInput.value, 10) || 20,
         volRegimeHigh: parseInt(volRegimeHighInput.value, 10) || 90,
         volRegimeMode: state.volRegimeMode,
+        exhaustionZ: state.exhaustionZ,
         volRegimeAbove: parseInt(volRegimeAboveInput.value, 10) || 80,
-        persistenceMin: parseFloat(persistenceMinInput.value) || 0.10,
         alternatorMode: state.alternatorMode,
         reverseMode: state.reverseMode,
         waitTimerMode: state.waitTimerMode,
@@ -2358,13 +2367,11 @@
       volRegimeAboveInput.value = data.volRegimeAbove;
       volRegimeAboveVal.textContent = data.volRegimeAbove + "th";
     }
-    if(data.persistenceMin != null){
-      state.persistenceMin = data.persistenceMin;
-      persistenceMinInput.value = data.persistenceMin;
-      persistenceMinVal.textContent = (data.persistenceMin>=0?"+":"") + data.persistenceMin.toFixed(2);
-    }
     if(data.volRegimeMode === "band" || data.volRegimeMode === "above"){
       setVolRegimeMode(data.volRegimeMode);
+    }
+    if(data.exhaustionZ === 2 || data.exhaustionZ === 3 || data.exhaustionZ === 4){
+      setExhaustionZ(data.exhaustionZ);
     }
 
     if(data.alternatorMode != null){
@@ -2510,13 +2517,6 @@
   });
   volRegimeAboveInput.addEventListener("change", savePersisted);
 
-  persistenceMinInput.addEventListener("input", function(){
-    const v = parseFloat(this.value) || 0;
-    state.persistenceMin = v;
-    persistenceMinVal.textContent = (v>=0?"+":"") + v.toFixed(2);
-  });
-  persistenceMinInput.addEventListener("change", savePersisted);
-
   // Band / Above mode switch — mutually exclusive by design: only one of the
   // two control groups is ever visible or applied at a time, so there's no
   // way for the low/high band and the single "above" threshold to conflict.
@@ -2529,6 +2529,19 @@
   }
   volModeBandBtn.addEventListener("click", function(){ setVolRegimeMode("band"); savePersisted(); });
   volModeAboveBtn.addEventListener("click", function(){ setVolRegimeMode("above"); savePersisted(); });
+
+  // Extreme entry strictness switch — 2z (standard outlier threshold) or
+  // 4z (only very sharp, rarer spikes/drops). Mutually exclusive toggle,
+  // same pattern as the volatility regime Band/Above switch above.
+  function setExhaustionZ(z){
+    state.exhaustionZ = z;
+    exhaustionZ2Btn.classList.toggle("active", z === 2);
+    exhaustionZ3Btn.classList.toggle("active", z === 3);
+    exhaustionZ4Btn.classList.toggle("active", z === 4);
+  }
+  exhaustionZ2Btn.addEventListener("click", function(){ setExhaustionZ(2); savePersisted(); });
+  exhaustionZ3Btn.addEventListener("click", function(){ setExhaustionZ(3); savePersisted(); });
+  exhaustionZ4Btn.addEventListener("click", function(){ setExhaustionZ(4); savePersisted(); });
 
   stakeInput.addEventListener("change", function(){ state.stake = parseFloat(this.value)||1; savePersisted(); });
   durationValueInput.addEventListener("change", function(){
@@ -2609,6 +2622,7 @@
 
   /* ===================== INIT ===================== */
   setVolRegimeMode("band"); // default; loadPersisted() below will override if a saved mode exists
+  setExhaustionZ(2); // default; loadPersisted() below will override if a saved value exists
   loadPersisted();
   updateDurationHint();
   updateCycleWaitHint();
