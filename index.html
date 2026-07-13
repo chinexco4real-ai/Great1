@@ -352,7 +352,7 @@
 
     <div class="conn-row" id="connRow">
       <div class="field" style="flex:1.4;">
-        <label>Access token</label>
+        <label id="tokenInputLabel">Access token <span id="loginOneBadge" style="display:none; color:var(--rise); text-transform:none;">— LOGIN 1</span></label>
         <div style="position:relative;">
           <input type="password" id="tokenInput" placeholder="Paste your Deriv OAuth2 / PAT token here" autocomplete="off" style="padding-right:38px;">
           <button type="button" id="tokenVisToggle" aria-label="Show token" title="Show token"
@@ -377,6 +377,57 @@
         <button class="btn btn-primary" id="connectBtn" style="white-space:nowrap;">Authorize &amp; connect</button>
       </div>
     </div>
+
+    <div class="toggle-row" style="margin-top:4px; padding-top:10px; border-top:1px solid var(--line-soft);">
+      <div>
+        <div class="toggle-label">Dual login auto-switch</div>
+        <div class="toggle-sub">Alternates between two tokens. Login 1 runs until it hits its loss limit, then the EA resets its session and switches to Login 2. Login 2 runs until it hits its profit target, then switches back to Login 1 — back and forth, non-stop.</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="dualModeToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div id="dualModeFields" style="display:none;">
+      <div class="conn-row" style="margin-top:10px;">
+        <div class="field" style="flex:1.4;">
+          <label>Login 2 access token</label>
+          <div style="position:relative;">
+            <input type="password" id="token2Input" placeholder="Paste the second Deriv OAuth2 / PAT token here" autocomplete="off" style="padding-right:38px;">
+            <button type="button" id="token2VisToggle" aria-label="Show token" title="Show token"
+              style="position:absolute; right:4px; top:50%; transform:translateY(-50%); width:28px; height:28px;
+                     display:flex; align-items:center; justify-content:center; background:transparent; border:none;
+                     color:var(--ink-faint); cursor:pointer; padding:0; border-radius:5px;">
+              <svg id="token2VisIconEye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg id="token2VisIconEyeOff" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M6.61 6.61C3.06 8.82 1 12 1 12s4 8 11 8a9.26 9.26 0 0 0 5.39-1.61"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+          <div id="token2LenHint" style="font-size:10.5px; color:var(--ink-faint); margin-top:5px; min-height:13px;"></div>
+        </div>
+        <div class="field" style="flex:0.7;">
+          <label>Environment</label>
+          <select id="env2Select">
+            <option value="demo">Demo (virtual)</option>
+            <option value="real">Real (live)</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Login 1 loss limit (USD)</label>
+          <div class="num-field"><input type="number" id="login1LossInput" value="5" min="0.01" step="0.5"></div>
+          <div class="field-hint">While Login 1 is active, switch to Login 2 once net P&amp;L drops to <b>−</b>this amount.</div>
+        </div>
+        <div class="field">
+          <label>Login 2 profit target (USD)</label>
+          <div class="num-field"><input type="number" id="login2ProfitInput" value="5" min="0.01" step="0.5"></div>
+          <div class="field-hint">While Login 2 is active, switch back to Login 1 once net P&amp;L reaches <b>+</b>this amount.</div>
+        </div>
+      </div>
+      <div class="dual-status" id="dualStatus" style="margin-top:2px; padding:10px 12px; border-radius:8px; background:var(--panel-2); border:1px solid var(--line); font-size:11.5px; color:var(--ink-dim); line-height:1.6; display:none;"></div>
+    </div>
+
     <div class="field" style="margin-top:8px;">
       <button class="btn btn-danger-ghost" style="width:100%" id="disconnectBtn">Disconnect &amp; end session</button>
     </div>
@@ -700,7 +751,8 @@
     authorized: false,
     appId: APP_ID,    // Deriv-App-ID header — required for the new Options API, no shared test id anymore
     accountId: "",    // e.g. "DOT90004580", resolved from /accounts before requesting an OTP
-    environment: "demo", // "demo" | "real" — selects /ws/demo or /ws/real
+    environment: "demo", // "demo" | "real" — selects /ws/demo or /ws/real — applies to Login 1
+    environment2: "demo", // "demo" | "real" — same, but for Login 2 in dual mode
     symbol: "R_75",
     ticks: [],            // {price, epoch}
     maxTicks: 400,
@@ -759,6 +811,15 @@
     cycleCountdownEndsAt: 0,  // epoch ms
     cycleCountdownHandle: null,
     cycleFinished: false,     // true once the daily cycle target has been reached — hard stop, no more cycles
+
+    // ── Dual login auto-switch ──────────────────────────────────────────
+    dualMode: false,          // master switch for the dual-login feature
+    token2: "",               // Login 2 token, kept in state so it survives field clears during a switch
+    login1LossLimit: 5,        // Login 1 -> Login 2 trigger: switches once net P&L drops to -this amount
+    login2ProfitTarget: 5,     // Login 2 -> Login 1 trigger: switches once net P&L reaches +this amount
+    activeLogin: 1,             // 1 or 2 — which login is currently authorized/trading
+    dualSwitchInFlight: false,  // guards against overlapping switch attempts
+    dualSwitchCount: 0,          // how many switches have happened this browser session (display only)
   };
 
   /* ===================== DOM ===================== */
@@ -823,6 +884,67 @@
   }
   tokenInput.addEventListener("input", updateTokenLenHint);
   const connectBtn = $("connectBtn"), disconnectBtn = $("disconnectBtn");
+
+  // ── Dual login auto-switch: DOM refs ──────────────────────────────────
+  const dualModeToggle = $("dualModeToggle"), dualModeFields = $("dualModeFields");
+  const token2Input = $("token2Input"), token2LenHint = $("token2LenHint");
+  const token2VisToggle = $("token2VisToggle"), token2VisIconEye = $("token2VisIconEye"), token2VisIconEyeOff = $("token2VisIconEyeOff");
+  const login1LossInput = $("login1LossInput"), login2ProfitInput = $("login2ProfitInput");
+  const env2Select = $("env2Select");
+  const dualStatus = $("dualStatus");
+  const loginOneBadge = $("loginOneBadge");
+
+  token2VisToggle.addEventListener("click", function(){
+    const isMasked = token2Input.type === "password";
+    token2Input.type = isMasked ? "text" : "password";
+    token2VisIconEye.style.display = isMasked ? "none" : "";
+    token2VisIconEyeOff.style.display = isMasked ? "" : "none";
+    token2VisToggle.setAttribute("aria-label", isMasked ? "Hide token" : "Show token");
+    token2VisToggle.setAttribute("title", isMasked ? "Hide token" : "Show token");
+  });
+
+  function updateToken2LenHint(){
+    const raw = token2Input.value;
+    const clean = sanitizeToken(raw);
+    if(!raw){ token2LenHint.textContent = ""; return; }
+    const shapeIssue = checkTokenShape(clean);
+    if(shapeIssue){
+      token2LenHint.textContent = clean.length + " characters \u2014 " + shapeIssue;
+      token2LenHint.style.color = "var(--fall, #e5484d)";
+      return;
+    }
+    if(clean !== raw){
+      token2LenHint.textContent = clean.length + " characters (whitespace/invisible characters detected and will be stripped before connecting)";
+      token2LenHint.style.color = "var(--fall, #e5484d)";
+    } else {
+      token2LenHint.textContent = clean.length + " characters";
+      token2LenHint.style.color = "var(--ink-faint)";
+    }
+  }
+  token2Input.addEventListener("input", function(){ updateToken2LenHint(); state.token2 = sanitizeToken(token2Input.value); savePersisted(); });
+
+  dualModeToggle.addEventListener("change", function(){
+    state.dualMode = this.checked;
+    dualModeFields.style.display = state.dualMode ? "" : "none";
+    loginOneBadge.style.display = state.dualMode ? "" : "none";
+    renderDualStatus();
+    savePersisted();
+  });
+  login1LossInput.addEventListener("change", function(){
+    state.login1LossLimit = Math.abs(parseFloat(this.value)) || 0;
+    renderDualStatus();
+    savePersisted();
+  });
+  login2ProfitInput.addEventListener("change", function(){
+    state.login2ProfitTarget = Math.abs(parseFloat(this.value)) || 0;
+    renderDualStatus();
+    savePersisted();
+  });
+  env2Select.addEventListener("change", function(){
+    state.environment2 = this.value || "demo";
+    savePersisted();
+  });
+
   const symbolSelect = $("symbolSelect");
   const priceMain = $("priceMain"), priceDelta = $("priceDelta"), priceMeta = $("priceMeta");
   const tapeEl = $("tape");
@@ -898,8 +1020,30 @@
       // cleaned value back so what's in the box matches what's actually sent.
       tokenInput.value = token;
     }
+
+    // Dual mode requires both logins up front — the switch can be triggered
+    // by the very first settlement, so Login 2 has to already be valid rather
+    // than discovered missing mid-cycle.
+    if(state.dualMode){
+      const token2 = sanitizeToken(token2Input.value);
+      if(!token2){
+        showGateError("Dual login mode is on \u2014 enter the Login 2 access token as well.");
+        return;
+      }
+      const shapeIssue2 = checkTokenShape(token2);
+      if(shapeIssue2){
+        showGateError("Login 2 token looks malformed \u2014 " + shapeIssue2);
+        return;
+      }
+      if(token2 !== token2Input.value) token2Input.value = token2;
+      state.token2 = token2;
+      state.environment2 = env2Select.value || "demo";
+    }
+
     state.appId = appId;
     state.manualDisconnect = false;
+    state.activeLogin = 1;
+    renderDualStatus();
     clearReconnectTimer();
     state.reconnectDelay = 2000;
     state.reconnectInFlight = false; // manual click always wins, even if a stale auto-reconnect attempt is (or appears) in flight
@@ -987,6 +1131,24 @@
   // Schedules a reconnect attempt with exponential backoff (2s, 4s, 8s ... capped
   // at 30s). Skipped entirely if the user hit Disconnect on purpose, or if there's
   // no saved token/appId to reconnect with.
+  // Returns whichever token should currently be used to (re)connect —
+  // Login 1's field normally, or Login 2's stored token when dual mode has
+  // switched the active login. Auto-reconnect (e.g. after a dropped socket)
+  // must reconnect with the SAME login that was active, not silently revert
+  // to Login 1.
+  function activeToken(){
+    if(state.dualMode && state.activeLogin === 2) return sanitizeToken(state.token2);
+    return sanitizeToken(tokenInput.value);
+  }
+
+  // Companion to activeToken() — each login can point at a different
+  // environment (demo vs real), so a reconnect/switch must resolve the
+  // account against the SAME environment the active login was authorized on.
+  function activeEnvironment(){
+    if(state.dualMode && state.activeLogin === 2) return state.environment2 || "demo";
+    return envSelect.value || "demo";
+  }
+
   function scheduleReconnect(){
     if(state.manualDisconnect) return;
     // If a connection attempt is already mid-flight (e.g. triggered by the
@@ -996,9 +1158,10 @@
     // if anything, needs to be scheduled next.
     if(state.reconnectInFlight) return;
     clearReconnectTimer();
-    const token = sanitizeToken(tokenInput.value);
+    const token = activeToken();
     const appId = APP_ID;
     if(!token) return;
+    state.environment = activeEnvironment(); // establishConnection reads state.environment to resolve the account
 
     const delay = state.reconnectDelay;
     // Only overwrite the status line with the countdown if we're not already
@@ -1243,7 +1406,7 @@
       state.reconnectDelay = 2000; // reset backoff after a successful connection
       clearReconnectTimer();
       startKeepalive(socket);
-      setConn("live", "live · " + state.environment);
+      setConn("live", "live · " + state.environment + (state.dualMode ? " · login " + state.activeLogin : ""));
       setConnectBtnConnected();
       startSessionTimer();
       onAuthorized();
@@ -1429,8 +1592,15 @@
       state.autoTrade = false;
       autoToggle.checked = false;
     }
+    // Dual mode: a manual end-session is a full stop, not a switch — always
+    // return to Login 1 as the starting point for the next connect, and clear
+    // any switch-in-progress guard so it can't get stuck.
+    state.activeLogin = 1;
+    state.dualSwitchInFlight = false;
+    state.dualSwitchCount = 0;
+    renderDualStatus();
     updateMasterFlag();
-    // Deliberate disconnect: wipe the token so it isn't left sitting in
+    // Deliberate disconnect: wipe both tokens so neither is left sitting in
     // storage or in the field, and so a later refresh has nothing to
     // auto-connect with.
     clearPersistedToken();
@@ -2037,6 +2207,129 @@
     renderCycleStatus();
   }
 
+  /* ===================== DUAL LOGIN AUTO-SWITCH ===================== */
+  // Checked right after every contract settlement (see onOpenContract), using
+  // the same dailyPnl the daily-limit pair and waiting-timer cycle already
+  // watch. The two logins have different triggers, not a shared target:
+  //   - Login 1 is expected to run at a LOSS before switching: it switches to
+  //     Login 2 once its net P&L drops to -login1LossLimit (a stop-loss).
+  //   - Login 2 is expected to run at a PROFIT before switching: it switches
+  //     back to Login 1 once its net P&L reaches +login2ProfitTarget (a
+  //     take-profit).
+  // On a trigger, the EA:
+  //   1. resets the session (stats/log wiped, exactly like a manual reset —
+  //      the flip side keeps its own fresh count, never inherits the other's),
+  //   2. re-authorizes with the other login's token via the same REST -> OTP
+  //      -> WebSocket handshake used for a normal connect,
+  //   3. resumes trading automatically once that handshake completes.
+  // This repeats indefinitely: 1 (loss) -> 2 (profit) -> 1 (loss) -> 2 (profit)
+  // ... for as long as dual mode stays enabled and auto-trading stays on.
+  function checkDualLoginSwitch(){
+    if(!state.dualMode) return;
+    if(state.dualSwitchInFlight) return;
+    if(state.cyclePaused) return;      // waiting-timer countdown owns the pause right now — don't also switch mid-countdown
+    if(state.haltReason) return;        // a hard daily loss/profit halt already stopped things — don't switch on top of that
+
+    const pnl = state.dailyPnl;
+    let hit = false;
+    if(state.activeLogin === 1){
+      hit = state.login1LossLimit > 0 && pnl <= -Math.abs(state.login1LossLimit);
+    } else {
+      hit = state.login2ProfitTarget > 0 && pnl >= state.login2ProfitTarget;
+    }
+    if(!hit) return;
+
+    performDualSwitch();
+  }
+
+  async function performDualSwitch(){
+    if(state.dualSwitchInFlight) return;
+    state.dualSwitchInFlight = true;
+
+    const fromLogin = state.activeLogin;
+    const toLogin = fromLogin === 1 ? 2 : 1;
+    const pnlAtSwitch = state.dailyPnl;
+    const triggerLabel = fromLogin === 1
+      ? "loss limit -" + state.login1LossLimit.toFixed(2)
+      : "profit target +" + state.login2ProfitTarget.toFixed(2);
+
+    logSystemNote(
+      "Dual-switch: Login " + fromLogin + " net P&L reached " + formatPnl(pnlAtSwitch) + " " + state.accountCurrency +
+      " (" + triggerLabel + ") \u2014 resetting session and switching to Login " + toLogin + "\u2026"
+    );
+
+    // Step 1: reset session (stats/log/halt wiped). If a trade is somehow
+    // still marked in-flight this will no-op and log a "blocked" note —
+    // in practice tradeInFlight is already false by the time settlement
+    // fires checkDualLoginSwitch, so this is just a safety mirror of the
+    // same guard resetSession() always applies.
+    resetSession();
+
+    const nextToken = toLogin === 2 ? sanitizeToken(state.token2 || token2Input.value) : sanitizeToken(tokenInput.value);
+    if(!nextToken){
+      state.dualSwitchInFlight = false;
+      haltAutoTrade("Dual login switch failed \u2014 Login " + toLogin + " token is missing.");
+      return;
+    }
+    const nextEnvironment = toLogin === 2 ? (state.environment2 || "demo") : (envSelect.value || "demo");
+
+    // Step 2: tear down the current socket (without wiping stats again —
+    // that already happened above) and re-authorize with the other login,
+    // resolving the account against THAT login's own environment (demo/real)
+    // rather than assuming both logins share the same one.
+    state.activeLogin = toLogin;
+    state.environment = nextEnvironment;
+    renderDualStatus();
+    clearReconnectTimer();
+    state.reconnectDelay = 2000;
+    state.reconnectInFlight = false;
+    state.authStageFailCount = 0;
+    stopKeepalive();
+    if(state.ws) state.ws.close();
+    state.ws = null;
+    state.authorized = false;
+    state.ticks = [];
+    setConn("wait", "switching to login " + toLogin + " (" + nextEnvironment + ")…");
+
+    try{
+      await establishConnection(nextToken, APP_ID, { showBusyUi: false, reconnecting: true });
+      state.dualSwitchCount++;
+      logSystemNote("Dual-switch: now trading on Login " + toLogin + " \u00b7 " + nextEnvironment + ". Fresh session started.");
+      // Step 3: auto-trading stays ON across the switch (per spec — the cycle
+      // continues non-stop) as long as it wasn't already turned off by the
+      // person or by a hard halt.
+    }catch(err){
+      logSystemNote("Dual-switch: failed to connect Login " + toLogin + " \u2014 " + (err && err.message ? err.message : "unknown error"));
+    }finally{
+      state.dualSwitchInFlight = false;
+      renderDualStatus();
+    }
+  }
+
+  function renderDualStatus(){
+    if(!state.dualMode){
+      dualStatus.style.display = "none";
+      loginOneBadge.style.display = "none";
+      return;
+    }
+    loginOneBadge.style.display = "";
+    dualStatus.style.display = "";
+
+    let remainingLabel;
+    if(state.activeLogin === 1){
+      const remaining = Math.max(0, state.dailyPnl - (-Math.abs(state.login1LossLimit)));
+      remainingLabel = remaining.toFixed(2) + " " + state.accountCurrency + " of cushion left before Login 1's loss limit (-" + state.login1LossLimit.toFixed(2) + ") switches to Login 2";
+    } else {
+      const remaining = Math.max(0, state.login2ProfitTarget - state.dailyPnl);
+      remainingLabel = remaining.toFixed(2) + " " + state.accountCurrency + " to Login 2's profit target (+" + state.login2ProfitTarget.toFixed(2) + ") which switches back to Login 1";
+    }
+
+    dualStatus.innerHTML =
+      "Active: <b>Login " + state.activeLogin + "</b> \u00b7 net P&amp;L " + formatPnl(state.dailyPnl) + " " + state.accountCurrency +
+      " \u00b7 " + remainingLabel +
+      (state.dualSwitchCount > 0 ? " \u00b7 switches so far: <b>" + state.dualSwitchCount + "</b>" : "");
+  }
+
   function parseDuration(){
     // Deriv duration_unit codes: t=ticks, s=seconds, m=minutes
     const val = parseInt(durationValueInput.value, 10) || 1;
@@ -2150,6 +2443,7 @@
         }
       }
       checkWaitTimerCycle();
+      checkDualLoginSwitch();
     }
   }
 
@@ -2204,6 +2498,7 @@
     statLost.textContent = state.tradesLost;
     statPnl.textContent = (state.dailyPnl>=0?"+":"") + state.dailyPnl.toFixed(2);
     statPnl.className = "stat-num " + (state.dailyPnl >= 0 ? "pos" : "neg");
+    renderDualStatus();
   }
 
   // Wipes session stats, the trade log, and any halt reason — but never while
@@ -2273,6 +2568,7 @@
         token: tokenInput.value,
         appId: APP_ID,
         environment: envSelect.value,
+        environment2: env2Select.value,
         symbol: symbolSelect.value,
         minStrength: state.minStrength,
         stake: parseFloat(stakeInput.value) || 1,
@@ -2293,23 +2589,31 @@
         cycleTarget: parseFloat(cycleTargetInput.value) || 0,
         cycleWaitHour: parseInt(cycleWaitHourInput.value, 10) || 0,
         cycleWaitMin: parseInt(cycleWaitMinInput.value, 10) || 0,
-        dailyCycleTarget: parseFloat(dailyCycleTargetInput.value) || 0
+        dailyCycleTarget: parseFloat(dailyCycleTargetInput.value) || 0,
+        dualMode: state.dualMode,
+        token2: token2Input.value,
+        login1LossLimit: parseFloat(login1LossInput.value) || 0,
+        login2ProfitTarget: parseFloat(login2ProfitInput.value) || 0
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }catch(e){ /* storage unavailable (private mode, quota, etc.) — fail silently */ }
   }
 
-  // Wipes the token from both the input field and localStorage, without
-  // touching any other saved settings. Used whenever the token should not
+  // Wipes both tokens from their input fields and localStorage, without
+  // touching any other saved settings. Used whenever the tokens should not
   // survive to the next connect attempt (manual disconnect, refresh).
   function clearPersistedToken(){
     tokenInput.value = "";
+    token2Input.value = "";
+    state.token2 = "";
     if(typeof updateTokenLenHint === "function") updateTokenLenHint();
+    if(typeof updateToken2LenHint === "function") updateToken2LenHint();
     try{
       const raw = localStorage.getItem(STORAGE_KEY);
       if(raw){
         const data = JSON.parse(raw);
         data.token = "";
+        data.token2 = "";
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       }
     }catch(e){ /* storage unavailable — fail silently */ }
@@ -2327,6 +2631,7 @@
     if(data.token){ tokenInput.value = data.token; updateTokenLenHint(); }
     // appId is hard-coded (APP_ID) — no longer read from storage.
     if(data.environment) envSelect.value = data.environment;
+    if(data.environment2){ env2Select.value = data.environment2; state.environment2 = data.environment2; }
     if(data.symbol){ symbolSelect.value = data.symbol; state.symbol = data.symbol; }
 
     if(data.minStrength){
@@ -2394,9 +2699,20 @@
       waitTimerToggle.checked = state.waitTimerMode;
     }
 
+    if(data.token2){ token2Input.value = data.token2; state.token2 = sanitizeToken(data.token2); updateToken2LenHint(); }
+    if(data.login1LossLimit != null){ login1LossInput.value = data.login1LossLimit; state.login1LossLimit = data.login1LossLimit; }
+    if(data.login2ProfitTarget != null){ login2ProfitInput.value = data.login2ProfitTarget; state.login2ProfitTarget = data.login2ProfitTarget; }
+    if(data.dualMode != null){
+      state.dualMode = !!data.dualMode;
+      dualModeToggle.checked = state.dualMode;
+      dualModeFields.style.display = state.dualMode ? "" : "none";
+      loginOneBadge.style.display = state.dualMode ? "" : "none";
+    }
+
     updateDurationHint();
     updateCycleWaitHint();
     renderCycleStatus();
+    renderDualStatus();
   }
 
   /* ===================== SESSION TIMER ===================== */
