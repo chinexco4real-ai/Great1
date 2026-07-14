@@ -2550,36 +2550,84 @@
 
     // One or more trades open: attempt an early sell on each. Most
     // fixed-duration contracts reject early sells (same behavior the
-    // existing position watchdog already handles) — if Deriv rejects it,
-    // there's nothing more to do but proceed with the switch anyway; the
-    // position keeps running server-side until its own natural expiry, same
-    // tradeoff the watchdog's hard-ceiling force-clear already accepts.
+    // existing position watchdog already handles). Either way — sold early
+    // or rejected — we do NOT let the switch proceed with tradeInFlight
+    // still true and the contract still tracked, or the trade becomes
+    // orphaned: its settlement (if any) would arrive on Login 2's socket,
+    // which performDualSwitch is about to tear down in favor of Login 1's,
+    // so onOpenContract() would never see it and tradeInFlight would stay
+    // stuck true forever — silently blocking every future trade with no
+    // visible error. (This was a real, reproduced bug: the log showed
+    // "Reset blocked \u2014 a trade is still open" immediately followed by
+    // "now trading on Login 1 \u00b7 Fresh session started", after which no
+    // further trades were ever placed.)
+    // Fix: once we've asked Deriv to sell (successfully or not), forcibly
+    // drop our own bookkeeping for that contract right here instead of
+    // waiting on a settlement message that may never reach us on the new
+    // session. If the sell DID succeed, fold its real proceeds into the P&L
+    // so the vault snapshot below stays accurate; if rejected, the contract
+    // keeps running server-side but we simply stop tracking it locally \u2014
+    // the same tradeoff the position watchdog's hard ceiling already
+    // accepts elsewhere in this EA.
     logSystemNote("Login 2 timer expired \u2014 attempting to close " + openIds.length + " open trade(s) before switching back to Login 1\u2026");
     let pending = openIds.length;
+    let soldProceeds = 0;
     const proceed = function(){
       pending--;
       if(pending > 0) return;
       state.login2TimerClosing = false;
-      performDualSwitch(triggerLabel, false);
+      performDualSwitch(triggerLabel, false, soldProceeds);
     };
     openIds.forEach(function(contractId){
       const cid = parseInt(contractId, 10);
+      const rowId = state.openContracts[cid];
+      const meta = state.contractMeta[cid];
       send({ sell: cid, price: 0 }, function(reply){
         if(reply && reply.error){
           console.debug("[TICKFRAME] Login 2 timer: contract #" + cid + " not sellable early (" + reply.error.message + ") \u2014 switching anyway; it will settle on its own.");
+          if(rowId) updateLogRow(rowId, "left running (timer switch, not sellable)", "lost");
+        } else if(reply && reply.sell){
+          // Sold successfully \u2014 fold the realized profit in now, since
+          // this amount would otherwise never arrive (onOpenContract won't
+          // fire on the socket we're about to tear down).
+          const soldPrice = parseFloat(reply.sell.sold_for || 0);
+          const buyPrice = meta && typeof meta.buyPrice === "number" ? meta.buyPrice : 0;
+          const contractProfit = soldPrice - buyPrice;
+          soldProceeds += contractProfit;
+          if(contractProfit >= 0) state.tradesWon++; else state.tradesLost++;
+          if(rowId) updateLogRow(rowId, formatPnl(contractProfit) + " " + state.accountCurrency + " (closed early, timer switch)", contractProfit >= 0 ? "won" : "lost");
         }
+        // Forcibly drop local tracking for this contract either way \u2014 see
+        // the block comment above for why we can't wait on settlement here.
+        delete state.openContracts[cid];
+        delete state.contractMeta[cid];
         proceed();
       });
     });
   }
 
-  async function performDualSwitch(triggerLabel, armReverse){
+  async function performDualSwitch(triggerLabel, armReverse, forcedProceeds){
     if(state.dualSwitchInFlight) return;
     state.dualSwitchInFlight = true;
     stopLogin2Timer(); // whatever happens next, any running Login 2 countdown is no longer relevant
 
+    // Safety net: if checkLogin2TimerExpiry force-cleared an orphaned
+    // contract's bookkeeping just above (see its comments), tradeInFlight
+    // may still read true because that contract will never settle on this
+    // socket. Clear it here too, defensively, so resetSession() below is
+    // never blocked by a trade this function has already decided to
+    // abandon. A contract that's still genuinely open and WILL settle
+    // normally clears this flag itself as always, via onOpenContract \u2014
+    // this only catches the abandoned-on-switch case.
+    if(!Object.keys(state.openContracts).length){
+      state.tradeInFlight = false;
+    }
+
     const fromLogin = state.activeLogin;
     const toLogin = fromLogin === 1 ? 2 : 1;
+    // Fold in any late-arriving proceeds from a forced early sell that
+    // happened after dailyPnl was last updated (see checkLogin2TimerExpiry).
+    if(forcedProceeds){ state.dailyPnl += forcedProceeds; }
     const pnlAtSwitch = state.dailyPnl;
 
     logSystemNote(
@@ -2618,14 +2666,13 @@
     }
 
     // Step 2: reset session (stats/log/halt wiped, including both streak
-    // counters). If a trade is somehow still marked in-flight this will
-    // no-op and log a "blocked" note — in practice tradeInFlight is already
-    // false by the time settlement fires checkDualLoginSwitch, so this is
-    // just a safety mirror of the same guard resetSession() always applies.
-    // (For a timer-triggered switch, any open trade was already handled —
-    // sold if possible, otherwise left to run — by checkLogin2TimerExpiry
-    // before this function was ever called, so tradeInFlight should already
-    // be clear by the time we get here.)
+    // counters). tradeInFlight is guaranteed clear by this point: for a
+    // profit-target switch the triggering trade already settled (that's
+    // what fired checkDualLoginSwitch in the first place); for a timer
+    // switch, checkLogin2TimerExpiry force-clears any orphaned open
+    // contract's bookkeeping before calling this function, and the safety
+    // net above re-confirms it. So this resetSession() call should now
+    // always succeed rather than hit its "blocked" branch.
     resetSession();
 
     const nextToken = toLogin === 2 ? sanitizeToken(state.token2 || token2Input.value) : sanitizeToken(tokenInput.value);
@@ -2878,7 +2925,12 @@
         }
         const contractId = buyMsg.buy.contract_id;
         state.openContracts[contractId] = rowId;
-        state.contractMeta[contractId] = { deadline: estimateContractDeadline(duration, duration_unit), sellAttempted: false, forceCleared: false };
+        state.contractMeta[contractId] = {
+          deadline: estimateContractDeadline(duration, duration_unit),
+          sellAttempted: false,
+          forceCleared: false,
+          buyPrice: parseFloat(buyMsg.buy.buy_price || price || 0) // needed to compute proceeds if this contract is ever force-sold before natural settlement (see checkLogin2TimerExpiry)
+        };
         state.tradesTotal++;
         updateStats();
         updateLogRow(rowId, "open · contract #" + contractId, "open");
