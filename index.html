@@ -253,6 +253,32 @@
   .stat-num.pos{ color:var(--rise); } .stat-num.neg{ color:var(--fall); }
   .stat-lbl{ font-size:9px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.5px; margin-top:3px; }
 
+  /* vault */
+  .vault-summary{
+    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+    background:var(--panel-2); border:1px solid var(--line-soft); border-radius:7px;
+    padding:12px; margin-bottom:12px;
+  }
+  .vault-total-lbl{ font-size:9px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.5px; }
+  .vault-total-num{ font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; display:block; margin-top:2px; }
+  .vault-total-num.pos{ color:var(--rise); } .vault-total-num.neg{ color:var(--fall); }
+  .vault-count{ font-size:10.5px; color:var(--ink-dim); white-space:nowrap; }
+  .vault-grid{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(72px,1fr)); gap:7px;
+    max-height:260px; overflow-y:auto; padding-right:2px;
+  }
+  .vault-box{
+    background:var(--panel-2); border:1px solid var(--line-soft); border-radius:7px;
+    padding:8px 6px; text-align:center; cursor:default;
+  }
+  .vault-box.pos{ border-color:var(--rise-dim); }
+  .vault-box.neg{ border-color:var(--fall-dim); }
+  .vault-box-num{ font-size:8.5px; color:var(--ink-faint); letter-spacing:0.3px; }
+  .vault-box-amt{ font-size:12.5px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:3px; }
+  .vault-box.pos .vault-box-amt{ color:var(--rise); }
+  .vault-box.neg .vault-box-amt{ color:var(--fall); }
+  .vault-box-meta{ font-size:8px; color:var(--ink-faint); margin-top:3px; }
+
   /* log */
   .log{ max-height:280px; overflow-y:auto; }
   .log-row{
@@ -413,19 +439,85 @@
           </select>
         </div>
       </div>
-      <div class="row">
-        <div class="field">
-          <label>Login 1 loss limit (USD)</label>
-          <div class="num-field"><input type="number" id="login1LossInput" value="5" min="0.01" step="0.5"></div>
-          <div class="field-hint">While Login 1 is active, switch to Login 2 once net P&amp;L drops to <b>−</b>this amount.</div>
+      <div style="margin-top:6px; padding:12px; border-radius:8px; background:var(--panel-2); border:1px solid var(--line);">
+        <div style="font-size:11px; font-weight:600; color:var(--ink); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">
+          Login 1 → Login 2 switch conditions
         </div>
-        <div class="field">
-          <label>Login 2 profit target (USD)</label>
-          <div class="num-field"><input type="number" id="login2ProfitInput" value="5" min="0.01" step="0.5"></div>
-          <div class="field-hint">While Login 2 is active, switch back to Login 1 once net P&amp;L reaches <b>+</b>this amount.</div>
+        <div style="font-size:10.5px; color:var(--ink-faint); margin-bottom:10px; line-height:1.5;">
+          Turn on any combination. If more than one is on, whichever condition is met <b>first</b> triggers the switch.
+        </div>
+
+        <div class="toggle-row" style="padding:0; margin-bottom:8px;">
+          <div>
+            <div class="toggle-label">Condition 1 — net loss limit</div>
+            <div class="toggle-sub">Switch once Login 1's net P&amp;L drops to −the amount below.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="login1LossEnabledToggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="field" id="login1LossFieldWrap" style="margin-bottom:12px;">
+          <div class="num-field"><input type="number" id="login1LossInput" value="5" min="0.01" step="0.5"></div>
+          <div class="field-hint">Loss limit, in USD.</div>
+        </div>
+
+        <div class="toggle-row" style="padding:0; margin-bottom:8px; border-top:1px solid var(--line-soft); padding-top:10px;">
+          <div>
+            <div class="toggle-label">Condition 2 — consecutive losses</div>
+            <div class="toggle-sub">Switch once this many losing trades happen in a row on Login 1.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="login1StreakEnabledToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="field" id="login1StreakFieldWrap" style="display:none; margin-bottom:12px;">
+          <div class="num-field"><input type="number" id="login1StreakInput" value="3" min="1" step="1"></div>
+          <div class="field-hint">Straight losing trades, count.</div>
+        </div>
+
+        <div class="toggle-row" style="padding:0; margin-bottom:8px; border-top:1px solid var(--line-soft); padding-top:10px;">
+          <div>
+            <div class="toggle-label">Condition 3 — consecutive wins</div>
+            <div class="toggle-sub">Switch once this many winning trades happen in a row on Login 1. Before switching, the EA turns <b>reverse mode</b> on; when Login 2 later hits its profit target and switches back, reverse mode is automatically turned back off. While this condition is on, dual mode owns reverse mode for the cycle — manually toggling it won't stick.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="login1WinStreakEnabledToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="field" id="login1WinStreakFieldWrap" style="display:none;">
+          <div class="num-field"><input type="number" id="login1WinStreakInput" value="3" min="1" step="1"></div>
+          <div class="field-hint">Straight winning trades, count.</div>
         </div>
       </div>
-      <div class="dual-status" id="dualStatus" style="margin-top:2px; padding:10px 12px; border-radius:8px; background:var(--panel-2); border:1px solid var(--line); font-size:11.5px; color:var(--ink-dim); line-height:1.6; display:none;"></div>
+
+      <div class="field" style="margin-top:12px;">
+        <label>Login 2 profit target (USD)</label>
+        <div class="num-field"><input type="number" id="login2ProfitInput" value="5" min="0.01" step="0.5"></div>
+        <div class="field-hint">While Login 2 is active, switch back to Login 1 once net P&amp;L reaches <b>+</b>this amount.</div>
+      </div>
+
+      <div style="margin-top:12px; padding:12px; border-radius:8px; background:var(--panel-2); border:1px solid var(--line);">
+        <div class="toggle-row" style="padding:0;">
+          <div>
+            <div class="toggle-label">Login 2 timer close</div>
+            <div class="toggle-sub">Starts a countdown the moment Login 2 becomes active. Login 2 switches back to Login 1 on whichever happens first: the profit target above, or this countdown running out.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="login2TimerEnabledToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="field" id="login2TimerFieldWrap" style="display:none; margin-top:10px;">
+          <label>Countdown (minutes)</label>
+          <div class="num-field"><input type="number" id="login2TimerInput" value="15" min="1" step="1"></div>
+          <div class="field-hint">If the profit target hasn't been reached when this runs out, the EA attempts to close any open trade and switches back to Login 1.</div>
+        </div>
+      </div>
+
+      <div class="dual-status" id="dualStatus" style="margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--panel-2); border:1px solid var(--line); font-size:11.5px; color:var(--ink-dim); line-height:1.6; display:none;"></div>
     </div>
 
     <div class="field" style="margin-top:8px;">
@@ -525,6 +617,26 @@
             <div class="stat"><div class="stat-num pos" id="statWon">0</div><div class="stat-lbl">Won</div></div>
             <div class="stat"><div class="stat-num neg" id="statLost">0</div><div class="stat-lbl">Lost</div></div>
             <div class="stat"><div class="stat-num" id="statPnl">0.00</div><div class="stat-lbl">Net P/L</div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">Snapshot vault <b style="font-weight:400; color:var(--ink-faint);">— Login 2 legs, banked automatically</b></div>
+            <button class="btn-reset-session" id="vaultClearBtn" type="button">Clear vault</button>
+          </div>
+          <div class="vault-summary">
+            <div>
+              <div class="vault-total-lbl">Vault total</div>
+              <div class="vault-total-num" id="vaultTotal">+0.00 USD</div>
+            </div>
+            <div class="vault-count" id="vaultCount">0 / 50 boxes</div>
+          </div>
+          <div class="vault-grid" id="vaultGrid">
+            <div class="log-empty">No snapshots yet — the vault fills as Login 2 legs complete.</div>
+          </div>
+          <div class="field-hint" style="margin-top:10px;">
+            When dual mode is on and the EA is running on Login 2, every time Login 2 hands back to Login 1 — either by hitting its profit target or by its timer running out — the EA snapshots that leg's net P&amp;L (win or loss) into a new box here <b>before</b> resetting the session and switching. Up to 50 boxes are kept; the oldest drops off once the vault is full, and the running total above always reflects everything ever banked.
           </div>
         </div>
       </div>
@@ -815,9 +927,37 @@
     // ── Dual login auto-switch ──────────────────────────────────────────
     dualMode: false,          // master switch for the dual-login feature
     token2: "",               // Login 2 token, kept in state so it survives field clears during a switch
-    login1LossLimit: 5,        // Login 1 -> Login 2 trigger: switches once net P&L drops to -this amount
+    login1LossLimit: 5,        // Login 1 -> Login 2 trigger (condition 1): switches once net P&L drops to -this amount. 0 = condition disabled.
+    login1LossLimitEnabled: true,  // condition 1 on/off — can run alone, alongside conditions 2/3, or be turned off entirely
+    login1StreakLimit: 3,       // Login 1 -> Login 2 trigger (condition 2): switches once this many LOSING trades happen in a row. 0 = condition disabled.
+    login1StreakLimitEnabled: false, // condition 2 on/off — independent of the others; whichever condition is met FIRST triggers the switch
+    consecutiveLosses: 0,        // running count of straight losing trades on the currently active login; any win resets it to 0
+    login1WinStreakLimit: 3,      // Login 1 -> Login 2 trigger (condition 3): switches once this many WINNING trades happen in a row. 0 = condition disabled.
+    login1WinStreakLimitEnabled: false, // condition 3 on/off — independent of the others; whichever condition is met FIRST triggers the switch
+    consecutiveWins: 0,            // running count of straight winning trades on the currently active login; any loss resets it to 0
+    dualReverseArmed: false,        // true once condition 3 has armed reverse mode for the current Login-2 leg — purely informational/display now (see renderDualStatus); the actual arm/disarm logic keys off dualMode + login1WinStreakLimitEnabled directly so manual toggling can never create a lasting opt-out while that combination is active
     login2ProfitTarget: 5,     // Login 2 -> Login 1 trigger: switches once net P&L reaches +this amount
+    login2TimerEnabled: false,   // Login 2 -> Login 1 trigger (timer close): switches once this countdown runs out, whichever of profit target / countdown hits first
+    login2TimerMinutes: 15,       // countdown length, in minutes, manually set
+    login2TimerEndsAt: 0,          // epoch ms deadline for the current countdown; 0 = no countdown running
+    login2TimerHandle: null,        // setInterval handle driving the countdown tick/expiry check
+    login2TimerClosing: false,       // true while a timer-triggered force-close is in flight (sell attempted, waiting on settlement) — guards against double-triggering
     activeLogin: 1,             // 1 or 2 — which login is currently authorized/trading
+
+    // ── Snapshot vault ───────────────────────────────────────────────────
+    // Banks a snapshot of Login 2's net P&L every time Login 2 hands back
+    // control to Login 1 — i.e. exactly the two triggers that already end a
+    // Login 2 leg: the profit target being hit, or the timer running out.
+    // The snapshot is taken from the SAME pnlAtSwitch value performDualSwitch
+    // already captures, and it is always taken before resetSession() (which
+    // zeroes state.dailyPnl) runs — so nothing is ever lost to the reset.
+    // Boxes are capped at vaultCap (50): once full, the oldest box is dropped
+    // to make room for the newest snapshot (FIFO), so the vault always shows
+    // the most recent 50 legs rather than silently refusing to record more.
+    vaultBoxes: [],           // [{ id, amount, login, trigger, ts }], newest last
+    vaultCap: 50,             // max number of boxes retained
+    vaultTotal: 0,            // running sum of all amounts ever banked (kept even if old boxes are dropped)
+    vaultNextId: 1,           // monotonically increasing id for box keys/display numbering
     dualSwitchInFlight: false,  // guards against overlapping switch attempts
     dualSwitchCount: 0,          // how many switches have happened this browser session (display only)
   };
@@ -890,9 +1030,18 @@
   const token2Input = $("token2Input"), token2LenHint = $("token2LenHint");
   const token2VisToggle = $("token2VisToggle"), token2VisIconEye = $("token2VisIconEye"), token2VisIconEyeOff = $("token2VisIconEyeOff");
   const login1LossInput = $("login1LossInput"), login2ProfitInput = $("login2ProfitInput");
+  const login1LossEnabledToggle = $("login1LossEnabledToggle"), login1LossFieldWrap = $("login1LossFieldWrap");
+  const login1StreakEnabledToggle = $("login1StreakEnabledToggle"), login1StreakFieldWrap = $("login1StreakFieldWrap");
+  const login1StreakInput = $("login1StreakInput");
+  const login1WinStreakEnabledToggle = $("login1WinStreakEnabledToggle"), login1WinStreakFieldWrap = $("login1WinStreakFieldWrap");
+  const login1WinStreakInput = $("login1WinStreakInput");
+  const login2TimerEnabledToggle = $("login2TimerEnabledToggle"), login2TimerFieldWrap = $("login2TimerFieldWrap");
+  const login2TimerInput = $("login2TimerInput");
   const env2Select = $("env2Select");
   const dualStatus = $("dualStatus");
   const loginOneBadge = $("loginOneBadge");
+  const vaultTotalEl = $("vaultTotal"), vaultCountEl = $("vaultCount"), vaultGrid = $("vaultGrid");
+  const vaultClearBtn = $("vaultClearBtn");
 
   token2VisToggle.addEventListener("click", function(){
     const isMasked = token2Input.type === "password";
@@ -927,6 +1076,13 @@
     state.dualMode = this.checked;
     dualModeFields.style.display = state.dualMode ? "" : "none";
     loginOneBadge.style.display = state.dualMode ? "" : "none";
+    if(!state.dualMode) stopLogin2Timer(); // dual mode off entirely — any running Login 2 countdown is no longer relevant
+    renderDualStatus();
+    savePersisted();
+  });
+  login1LossEnabledToggle.addEventListener("change", function(){
+    state.login1LossLimitEnabled = this.checked;
+    login1LossFieldWrap.style.display = this.checked ? "" : "none";
     renderDualStatus();
     savePersisted();
   });
@@ -935,8 +1091,50 @@
     renderDualStatus();
     savePersisted();
   });
+  login1StreakEnabledToggle.addEventListener("change", function(){
+    state.login1StreakLimitEnabled = this.checked;
+    login1StreakFieldWrap.style.display = this.checked ? "" : "none";
+    renderDualStatus();
+    savePersisted();
+  });
+  login1StreakInput.addEventListener("change", function(){
+    state.login1StreakLimit = Math.max(1, parseInt(this.value, 10) || 0);
+    renderDualStatus();
+    savePersisted();
+  });
+  login1WinStreakEnabledToggle.addEventListener("change", function(){
+    state.login1WinStreakLimitEnabled = this.checked;
+    login1WinStreakFieldWrap.style.display = this.checked ? "" : "none";
+    renderDualStatus();
+    savePersisted();
+  });
+  login1WinStreakInput.addEventListener("change", function(){
+    state.login1WinStreakLimit = Math.max(1, parseInt(this.value, 10) || 0);
+    renderDualStatus();
+    savePersisted();
+  });
   login2ProfitInput.addEventListener("change", function(){
     state.login2ProfitTarget = Math.abs(parseFloat(this.value)) || 0;
+    renderDualStatus();
+    savePersisted();
+  });
+  login2TimerEnabledToggle.addEventListener("change", function(){
+    state.login2TimerEnabled = this.checked;
+    login2TimerFieldWrap.style.display = this.checked ? "" : "none";
+    if(this.checked){
+      // If this gets turned on WHILE Login 2 is already the active login,
+      // start the countdown immediately from now rather than waiting for a
+      // switch that already happened — otherwise toggling it on mid-session
+      // would silently do nothing until the next full cycle.
+      if(state.dualMode && state.activeLogin === 2) startLogin2Timer();
+    } else {
+      stopLogin2Timer();
+    }
+    renderDualStatus();
+    savePersisted();
+  });
+  login2TimerInput.addEventListener("change", function(){
+    state.login2TimerMinutes = Math.max(1, parseInt(this.value, 10) || 0);
     renderDualStatus();
     savePersisted();
   });
@@ -1598,6 +1796,16 @@
     state.activeLogin = 1;
     state.dualSwitchInFlight = false;
     state.dualSwitchCount = 0;
+    stopLogin2Timer(); // a full manual stop always cancels any running Login 2 countdown
+    // While dual mode + condition 3 are enabled, a manual stop should also
+    // clear reverse mode back to default — otherwise the next connect could
+    // silently start reversed with no dual-mode cycle in progress to explain
+    // why. Same "dual mode owns it" rule as everywhere else in this feature.
+    if(state.dualMode && state.login1WinStreakLimitEnabled && state.reverseMode){
+      state.reverseMode = false;
+      reverseToggle.checked = false;
+    }
+    state.dualReverseArmed = false;
     renderDualStatus();
     updateMasterFlag();
     // Deliberate disconnect: wipe both tokens so neither is left sitting in
@@ -2210,59 +2418,214 @@
   /* ===================== DUAL LOGIN AUTO-SWITCH ===================== */
   // Checked right after every contract settlement (see onOpenContract), using
   // the same dailyPnl the daily-limit pair and waiting-timer cycle already
-  // watch. The two logins have different triggers, not a shared target:
-  //   - Login 1 is expected to run at a LOSS before switching: it switches to
-  //     Login 2 once its net P&L drops to -login1LossLimit (a stop-loss).
-  //   - Login 2 is expected to run at a PROFIT before switching: it switches
-  //     back to Login 1 once its net P&L reaches +login2ProfitTarget (a
-  //     take-profit).
-  // On a trigger, the EA:
+  // watch, plus a running consecutiveLosses streak counter maintained in
+  // onOpenContract's win/loss branch.
+  //
+  // Login 1 -> Login 2 has TWO independent trigger conditions, either or both
+  // of which can be enabled:
+  //   - Condition 1 (net loss limit): switches once net P&L drops to
+  //     -login1LossLimit (a stop-loss).
+  //   - Condition 2 (consecutive losses): switches once this many losing
+  //     trades happen in a row, regardless of net P&L (a losing-streak guard —
+  //     e.g. 3 straight losses could still net out above the loss limit but
+  //     still signal "this login is having a bad run right now").
+  //   - Condition 3 (consecutive wins): switches once this many winning
+  //     trades happen in a row. Unlike the other two, this one also flips a
+  //     side effect: right before switching, the EA turns reverse mode ON
+  //     (see reverseToggle/state.reverseMode — it flips BUY<->SELL on every
+  //     trade placed from then on). The idea is that a hot win streak is
+  //     treated as a signal to fade the strategy on the fresh Login 2 session.
+  //     Reverse mode is turned back OFF automatically the next time Login 2
+  //     hits its profit target and switches back to Login 1. While dual mode
+  //     AND condition 3 are both enabled, this automation OWNS reverse mode
+  //     for the whole 1->2->1 cycle: a manual click on the checkbox changes
+  //     it for right now, but does not create a lasting opt-out — the next
+  //     switch-back still turns it off regardless. Manual clicks only stick
+  //     once dual mode or condition 3 is turned off.
+  // If more than one condition is enabled, whichever is met FIRST triggers
+  // the switch — they are not ANDed together, each is checked independently
+  // on every settlement and the first one to go true wins.
+  //
+  // Login 2 -> Login 1 keeps its single condition: switches back once net
+  // P&L reaches +login2ProfitTarget (a take-profit).
+  //
+  // On any trigger, the EA:
   //   1. resets the session (stats/log wiped, exactly like a manual reset —
-  //      the flip side keeps its own fresh count, never inherits the other's),
+  //      the flip side keeps its own fresh count, never inherits the other's,
+  //      and both streak counters are reset along with it),
   //   2. re-authorizes with the other login's token via the same REST -> OTP
   //      -> WebSocket handshake used for a normal connect,
   //   3. resumes trading automatically once that handshake completes.
-  // This repeats indefinitely: 1 (loss) -> 2 (profit) -> 1 (loss) -> 2 (profit)
-  // ... for as long as dual mode stays enabled and auto-trading stays on.
+  // This repeats indefinitely: 1 -> 2 -> 1 -> 2 ... for as long as dual mode
+  // stays enabled and auto-trading stays on.
   function checkDualLoginSwitch(){
     if(!state.dualMode) return;
     if(state.dualSwitchInFlight) return;
     if(state.cyclePaused) return;      // waiting-timer countdown owns the pause right now — don't also switch mid-countdown
     if(state.haltReason) return;        // a hard daily loss/profit halt already stopped things — don't switch on top of that
 
-    const pnl = state.dailyPnl;
     let hit = false;
-    if(state.activeLogin === 1){
-      hit = state.login1LossLimit > 0 && pnl <= -Math.abs(state.login1LossLimit);
-    } else {
-      hit = state.login2ProfitTarget > 0 && pnl >= state.login2ProfitTarget;
-    }
-    if(!hit) return;
+    let triggerLabel = "";
+    let armReverse = false;
 
-    performDualSwitch();
+    if(state.activeLogin === 1){
+      const pnl = state.dailyPnl;
+      const lossHit = state.login1LossLimitEnabled && state.login1LossLimit > 0 && pnl <= -Math.abs(state.login1LossLimit);
+      const streakHit = state.login1StreakLimitEnabled && state.login1StreakLimit > 0 && state.consecutiveLosses >= state.login1StreakLimit;
+      const winStreakHit = state.login1WinStreakLimitEnabled && state.login1WinStreakLimit > 0 && state.consecutiveWins >= state.login1WinStreakLimit;
+      // All three conditions are checked every settlement; whichever is true
+      // first (in practice: whichever this settlement just satisfied) wins.
+      // If a single settlement happens to satisfy more than one at once,
+      // priority is loss limit > loss streak > win streak, since the loss-
+      // side conditions are the more consequential (capital-preserving) ones.
+      if(lossHit){
+        hit = true;
+        triggerLabel = "condition 1: loss limit -" + state.login1LossLimit.toFixed(2);
+      } else if(streakHit){
+        hit = true;
+        triggerLabel = "condition 2: " + state.consecutiveLosses + " consecutive losses (limit " + state.login1StreakLimit + ")";
+      } else if(winStreakHit){
+        hit = true;
+        armReverse = true;
+        triggerLabel = "condition 3: " + state.consecutiveWins + " consecutive wins (limit " + state.login1WinStreakLimit + ")";
+      }
+    } else {
+      // Login 2 has two competing exit conditions: profit target (checked
+      // here, on every settlement) and the timer countdown (checked
+      // separately by its own interval in checkLogin2TimerExpiry, since it
+      // has to be able to fire even between settlements, i.e. while no trade
+      // is open). Whichever fires first wins; this settlement-driven check
+      // only ever handles the profit-target side.
+      const hit2 = state.login2ProfitTarget > 0 && state.dailyPnl >= state.login2ProfitTarget;
+      if(hit2){
+        hit = true;
+        triggerLabel = "profit target +" + state.login2ProfitTarget.toFixed(2);
+        stopLogin2Timer(); // profit target won the race — the countdown is moot now
+      }
+    }
+
+    if(!hit) return;
+    performDualSwitch(triggerLabel, armReverse);
   }
 
-  async function performDualSwitch(){
+  // ── Login 2 timer close ──────────────────────────────────────────────
+  // Independent of settlement events — this has to be able to fire even
+  // while no trade is currently open (e.g. between trades, or while waiting
+  // on a signal), so it runs on its own 1s interval rather than piggybacking
+  // on checkDualLoginSwitch. Started the moment Login 2 becomes active (see
+  // performDualSwitch) and stopped the moment Login 2 stops being active,
+  // for any reason (profit target hit, manual disconnect, dual mode/timer
+  // turned off).
+  function startLogin2Timer(){
+    stopLogin2Timer(); // clear any stale timer first — never stack two
+    if(!state.login2TimerEnabled || state.login2TimerMinutes <= 0) return;
+    state.login2TimerEndsAt = Date.now() + state.login2TimerMinutes * 60000;
+    state.login2TimerHandle = setInterval(checkLogin2TimerExpiry, 1000);
+    renderDualStatus();
+  }
+
+  function stopLogin2Timer(){
+    if(state.login2TimerHandle){ clearInterval(state.login2TimerHandle); state.login2TimerHandle = null; }
+    state.login2TimerEndsAt = 0;
+    state.login2TimerClosing = false;
+  }
+
+  function checkLogin2TimerExpiry(){
+    if(!state.dualMode || state.activeLogin !== 2 || !state.login2TimerEnabled) { stopLogin2Timer(); return; }
+    if(state.dualSwitchInFlight || state.login2TimerClosing) return; // already switching/closing — let that finish
+    if(!state.login2TimerEndsAt || Date.now() < state.login2TimerEndsAt) { renderDualStatus(); return; }
+
+    // Countdown has run out and the profit target hasn't won the race —
+    // force-close whatever's open (if anything) and switch back to Login 1.
+    state.login2TimerClosing = true;
+    const triggerLabel = "timer close (" + state.login2TimerMinutes + " min countdown expired)";
+
+    const openIds = Object.keys(state.openContracts);
+    if(!openIds.length){
+      // Nothing open right now — nothing to close, switch immediately.
+      state.login2TimerClosing = false;
+      performDualSwitch(triggerLabel, false);
+      return;
+    }
+
+    // One or more trades open: attempt an early sell on each. Most
+    // fixed-duration contracts reject early sells (same behavior the
+    // existing position watchdog already handles) — if Deriv rejects it,
+    // there's nothing more to do but proceed with the switch anyway; the
+    // position keeps running server-side until its own natural expiry, same
+    // tradeoff the watchdog's hard-ceiling force-clear already accepts.
+    logSystemNote("Login 2 timer expired \u2014 attempting to close " + openIds.length + " open trade(s) before switching back to Login 1\u2026");
+    let pending = openIds.length;
+    const proceed = function(){
+      pending--;
+      if(pending > 0) return;
+      state.login2TimerClosing = false;
+      performDualSwitch(triggerLabel, false);
+    };
+    openIds.forEach(function(contractId){
+      const cid = parseInt(contractId, 10);
+      send({ sell: cid, price: 0 }, function(reply){
+        if(reply && reply.error){
+          console.debug("[TICKFRAME] Login 2 timer: contract #" + cid + " not sellable early (" + reply.error.message + ") \u2014 switching anyway; it will settle on its own.");
+        }
+        proceed();
+      });
+    });
+  }
+
+  async function performDualSwitch(triggerLabel, armReverse){
     if(state.dualSwitchInFlight) return;
     state.dualSwitchInFlight = true;
+    stopLogin2Timer(); // whatever happens next, any running Login 2 countdown is no longer relevant
 
     const fromLogin = state.activeLogin;
     const toLogin = fromLogin === 1 ? 2 : 1;
     const pnlAtSwitch = state.dailyPnl;
-    const triggerLabel = fromLogin === 1
-      ? "loss limit -" + state.login1LossLimit.toFixed(2)
-      : "profit target +" + state.login2ProfitTarget.toFixed(2);
 
     logSystemNote(
       "Dual-switch: Login " + fromLogin + " net P&L reached " + formatPnl(pnlAtSwitch) + " " + state.accountCurrency +
       " (" + triggerLabel + ") \u2014 resetting session and switching to Login " + toLogin + "\u2026"
     );
 
-    // Step 1: reset session (stats/log/halt wiped). If a trade is somehow
-    // still marked in-flight this will no-op and log a "blocked" note —
-    // in practice tradeInFlight is already false by the time settlement
-    // fires checkDualLoginSwitch, so this is just a safety mirror of the
-    // same guard resetSession() always applies.
+    // Reverse-mode side effect (condition 3 only): arm it BEFORE the switch,
+    // while still on Login 1, so the very first trade placed on Login 2 is
+    // already reversed. While dual mode + condition 3 are enabled, this
+    // automation OWNS reverse mode for the cycle — it always turns it on
+    // here (even if a manual click had turned it off again in the meantime)
+    // and always turns it back off at the Login 2 -> Login 1 switch below,
+    // regardless of any manual toggling that happened in between. Manual
+    // clicks only "stick" when dual mode or condition 3 is off.
+    if(armReverse && !state.reverseMode){
+      state.reverseMode = true;
+      reverseToggle.checked = true;
+      logSystemNote("Dual-switch: reverse mode enabled automatically (condition 3).");
+    }
+    if(armReverse) state.dualReverseArmed = true;
+
+    // Step 1 (vault): the moment Login 2 hands back to Login 1 — whichever
+    // of its two triggers fired (profit target above, or the timer running
+    // out in checkLogin2TimerExpiry) — snapshot its net P&L into the vault.
+    // This MUST happen before resetSession() below, since that call zeroes
+    // state.dailyPnl; pnlAtSwitch was captured at the top of this function
+    // from the live value, so it's exactly what Login 2 accumulated this leg.
+    // Login 1 -> Login 2 switches never snapshot: only a completed Login 2
+    // leg (profit or loss, whichever way its timer/target closed it) is
+    // banked, per spec ("EA first snapshot the profit into the vault ... or
+    // when the timer runs out EA first snapshot the accumulated profit or
+    // loss ... EA must snapshot before reset and switching to login 1").
+    if(fromLogin === 2){
+      snapshotToVault(pnlAtSwitch, triggerLabel);
+    }
+
+    // Step 2: reset session (stats/log/halt wiped, including both streak
+    // counters). If a trade is somehow still marked in-flight this will
+    // no-op and log a "blocked" note — in practice tradeInFlight is already
+    // false by the time settlement fires checkDualLoginSwitch, so this is
+    // just a safety mirror of the same guard resetSession() always applies.
+    // (For a timer-triggered switch, any open trade was already handled —
+    // sold if possible, otherwise left to run — by checkLogin2TimerExpiry
+    // before this function was ever called, so tradeInFlight should already
+    // be clear by the time we get here.)
     resetSession();
 
     const nextToken = toLogin === 2 ? sanitizeToken(state.token2 || token2Input.value) : sanitizeToken(tokenInput.value);
@@ -2279,6 +2642,20 @@
     // rather than assuming both logins share the same one.
     state.activeLogin = toLogin;
     state.environment = nextEnvironment;
+
+    // Reverse-mode side effect, continued: switching BACK to Login 1 (i.e.
+    // this switch originated from Login 2 hitting its profit target OR its
+    // timer expiring) is the signal to disarm reverse mode. This fires
+    // whenever dual mode + condition 3 are enabled — a manual toggle in
+    // between does not exempt this switch from turning it back off; dual
+    // mode's automation overrides whatever the checkbox currently shows.
+    if(toLogin === 1 && state.dualMode && state.login1WinStreakLimitEnabled){
+      state.reverseMode = false;
+      reverseToggle.checked = false;
+      state.dualReverseArmed = false;
+      logSystemNote("Dual-switch: reverse mode disabled automatically \u2014 back to default.");
+    }
+
     renderDualStatus();
     clearReconnectTimer();
     state.reconnectDelay = 2000;
@@ -2297,7 +2674,9 @@
       logSystemNote("Dual-switch: now trading on Login " + toLogin + " \u00b7 " + nextEnvironment + ". Fresh session started.");
       // Step 3: auto-trading stays ON across the switch (per spec — the cycle
       // continues non-stop) as long as it wasn't already turned off by the
-      // person or by a hard halt.
+      // person or by a hard halt. Login 2's timer (if enabled) starts fresh
+      // right here, the moment it becomes the active login.
+      if(toLogin === 2) startLogin2Timer();
     }catch(err){
       logSystemNote("Dual-switch: failed to connect Login " + toLogin + " \u2014 " + (err && err.message ? err.message : "unknown error"));
     }finally{
@@ -2315,19 +2694,112 @@
     loginOneBadge.style.display = "";
     dualStatus.style.display = "";
 
-    let remainingLabel;
+    let conditionLines = "";
     if(state.activeLogin === 1){
-      const remaining = Math.max(0, state.dailyPnl - (-Math.abs(state.login1LossLimit)));
-      remainingLabel = remaining.toFixed(2) + " " + state.accountCurrency + " of cushion left before Login 1's loss limit (-" + state.login1LossLimit.toFixed(2) + ") switches to Login 2";
+      const parts = [];
+      if(state.login1LossLimitEnabled && state.login1LossLimit > 0){
+        const remaining = Math.max(0, state.dailyPnl - (-Math.abs(state.login1LossLimit)));
+        parts.push(remaining.toFixed(2) + " " + state.accountCurrency + " cushion left before the -" + state.login1LossLimit.toFixed(2) + " loss limit");
+      }
+      if(state.login1StreakLimitEnabled && state.login1StreakLimit > 0){
+        parts.push(state.consecutiveLosses + " / " + state.login1StreakLimit + " consecutive losses");
+      }
+      if(state.login1WinStreakLimitEnabled && state.login1WinStreakLimit > 0){
+        parts.push(state.consecutiveWins + " / " + state.login1WinStreakLimit + " consecutive wins");
+      }
+      conditionLines = parts.length ? parts.join(" \u00b7 ") : "no switch conditions enabled for Login 1";
     } else {
       const remaining = Math.max(0, state.login2ProfitTarget - state.dailyPnl);
-      remainingLabel = remaining.toFixed(2) + " " + state.accountCurrency + " to Login 2's profit target (+" + state.login2ProfitTarget.toFixed(2) + ") which switches back to Login 1";
+      conditionLines = remaining.toFixed(2) + " " + state.accountCurrency + " to the +" + state.login2ProfitTarget.toFixed(2) + " profit target";
+      if(state.login2TimerEnabled && state.login2TimerEndsAt){
+        const msLeft = Math.max(0, state.login2TimerEndsAt - Date.now());
+        const mm = Math.floor(msLeft / 60000);
+        const ss = Math.floor((msLeft % 60000) / 1000);
+        conditionLines += " \u00b7 timer closes in " + mm + ":" + (ss < 10 ? "0" : "") + ss;
+      }
+      if(state.dualReverseArmed) conditionLines += " \u00b7 reverse mode active (auto)";
     }
 
     dualStatus.innerHTML =
       "Active: <b>Login " + state.activeLogin + "</b> \u00b7 net P&amp;L " + formatPnl(state.dailyPnl) + " " + state.accountCurrency +
-      " \u00b7 " + remainingLabel +
+      " \u00b7 " + conditionLines +
       (state.dualSwitchCount > 0 ? " \u00b7 switches so far: <b>" + state.dualSwitchCount + "</b>" : "");
+  }
+
+  /* ===================== SNAPSHOT VAULT ===================== */
+  // One box is created every time a Login 2 leg ends (profit target hit OR
+  // timer expired — see performDualSwitch), holding whatever that leg's net
+  // P&L was, positive or negative. Purely a record — it never feeds back
+  // into balances, stakes, or any trading decision; it's a running ledger of
+  // "what each Login 2 leg made or lost", capped at 50 boxes (oldest drops
+  // first once full, FIFO), with vaultTotal preserving the all-time sum even
+  // as individual boxes age out.
+  function snapshotToVault(amount, triggerLabel){
+    const box = {
+      id: state.vaultNextId++,
+      amount: amount,
+      login: 2,                 // always banked from the Login 2 leg that just ended
+      trigger: triggerLabel || "",
+      ts: Date.now()
+    };
+    state.vaultBoxes.push(box);
+    if(state.vaultBoxes.length > state.vaultCap){
+      state.vaultBoxes.shift(); // drop oldest — keep the most recent vaultCap boxes visible
+    }
+    state.vaultTotal += amount;
+    logSystemNote(
+      "Vault: snapshotted " + formatPnl(amount) + " " + state.accountCurrency +
+      " from Login 2 (" + triggerLabel + ") into box #" + box.id +
+      ". Vault total: " + formatPnl(state.vaultTotal) + " " + state.accountCurrency + "."
+    );
+    renderVault();
+    savePersisted();
+  }
+
+  function clearVault(){
+    state.vaultBoxes = [];
+    state.vaultTotal = 0;
+    state.vaultNextId = 1;
+    renderVault();
+    savePersisted();
+  }
+
+  function renderVault(){
+    if(!vaultTotalEl) return; // guard in case markup isn't present for some reason
+
+    vaultTotalEl.textContent = formatPnl(state.vaultTotal) + " " + state.accountCurrency;
+    vaultTotalEl.className = "vault-total-num " + (state.vaultTotal > 0 ? "pos" : state.vaultTotal < 0 ? "neg" : "");
+    vaultCountEl.textContent = state.vaultBoxes.length + " / " + state.vaultCap + " boxes";
+
+    if(!state.vaultBoxes.length){
+      vaultGrid.innerHTML = '<div class="log-empty">No snapshots yet — the vault fills as Login 2 legs complete.</div>';
+      return;
+    }
+
+    // Newest first for display, independent of the FIFO storage order.
+    const boxesDesc = state.vaultBoxes.slice().reverse();
+    vaultGrid.innerHTML = boxesDesc.map(function(box){
+      const sign = box.amount >= 0 ? "pos" : "neg";
+      const d = new Date(box.ts);
+      const hh = String(d.getHours()).padStart(2,"0");
+      const mm = String(d.getMinutes()).padStart(2,"0");
+      const dateLbl = d.toLocaleDateString(undefined, { month:"short", day:"numeric" });
+      return (
+        '<div class="vault-box ' + sign + '" title="' + escapeHtml(box.trigger) + '">' +
+          '<div class="vault-box-num">#' + box.id + '</div>' +
+          '<div class="vault-box-amt">' + formatPnl(box.amount) + '</div>' +
+          '<div class="vault-box-meta">' + dateLbl + ' ' + hh + ':' + mm + '</div>' +
+        '</div>'
+      );
+    }).join("");
+  }
+
+  // Minimal HTML-escape for the trigger-label tooltip (comes from internal
+  // strings only — never user input — but escaped anyway as good hygiene).
+  function escapeHtml(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+      return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c];
+    });
   }
 
   function parseDuration(){
@@ -2426,8 +2898,17 @@
     if(poc.is_sold){
       const profit = parseFloat(poc.profit || 0);
       state.dailyPnl += profit;
-      if(profit > 0){ state.tradesWon++; updateLogRow(rowId, formatPnl(profit) + " " + state.accountCurrency, "won"); }
-      else { state.tradesLost++; updateLogRow(rowId, formatPnl(profit) + " " + state.accountCurrency, "lost"); }
+      if(profit > 0){
+        state.tradesWon++;
+        state.consecutiveLosses = 0; // any win breaks the loss streak
+        state.consecutiveWins++;      // extends the win streak
+        updateLogRow(rowId, formatPnl(profit) + " " + state.accountCurrency, "won");
+      } else {
+        state.tradesLost++;
+        state.consecutiveLosses++; // extends the streak; a push (profit === 0) counts as a loss here, same as the won/lost log classification above
+        state.consecutiveWins = 0;   // any loss breaks the win streak
+        updateLogRow(rowId, formatPnl(profit) + " " + state.accountCurrency, "lost");
+      }
       updateStats();
       delete state.openContracts[poc.contract_id];
       delete state.contractMeta[poc.contract_id];
@@ -2515,6 +2996,8 @@
     state.tradesWon = 0;
     state.tradesLost = 0;
     state.dailyPnl = 0;
+    state.consecutiveLosses = 0;
+    state.consecutiveWins = 0;
     state.haltReason = null;
     state.lastTradeTime = 0;
     state.openContracts = {};
@@ -2593,7 +3076,17 @@
         dualMode: state.dualMode,
         token2: token2Input.value,
         login1LossLimit: parseFloat(login1LossInput.value) || 0,
-        login2ProfitTarget: parseFloat(login2ProfitInput.value) || 0
+        login1LossLimitEnabled: login1LossEnabledToggle.checked,
+        login1StreakLimit: parseInt(login1StreakInput.value, 10) || 0,
+        login1StreakLimitEnabled: login1StreakEnabledToggle.checked,
+        login1WinStreakLimit: parseInt(login1WinStreakInput.value, 10) || 0,
+        login1WinStreakLimitEnabled: login1WinStreakEnabledToggle.checked,
+        login2ProfitTarget: parseFloat(login2ProfitInput.value) || 0,
+        login2TimerEnabled: login2TimerEnabledToggle.checked,
+        login2TimerMinutes: parseInt(login2TimerInput.value, 10) || 0,
+        vaultBoxes: state.vaultBoxes,
+        vaultTotal: state.vaultTotal,
+        vaultNextId: state.vaultNextId
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }catch(e){ /* storage unavailable (private mode, quota, etc.) — fail silently */ }
@@ -2701,7 +3194,30 @@
 
     if(data.token2){ token2Input.value = data.token2; state.token2 = sanitizeToken(data.token2); updateToken2LenHint(); }
     if(data.login1LossLimit != null){ login1LossInput.value = data.login1LossLimit; state.login1LossLimit = data.login1LossLimit; }
+    if(data.login1LossLimitEnabled != null){
+      state.login1LossLimitEnabled = !!data.login1LossLimitEnabled;
+      login1LossEnabledToggle.checked = state.login1LossLimitEnabled;
+      login1LossFieldWrap.style.display = state.login1LossLimitEnabled ? "" : "none";
+    }
+    if(data.login1StreakLimit != null){ login1StreakInput.value = data.login1StreakLimit; state.login1StreakLimit = data.login1StreakLimit; }
+    if(data.login1StreakLimitEnabled != null){
+      state.login1StreakLimitEnabled = !!data.login1StreakLimitEnabled;
+      login1StreakEnabledToggle.checked = state.login1StreakLimitEnabled;
+      login1StreakFieldWrap.style.display = state.login1StreakLimitEnabled ? "" : "none";
+    }
+    if(data.login1WinStreakLimit != null){ login1WinStreakInput.value = data.login1WinStreakLimit; state.login1WinStreakLimit = data.login1WinStreakLimit; }
+    if(data.login1WinStreakLimitEnabled != null){
+      state.login1WinStreakLimitEnabled = !!data.login1WinStreakLimitEnabled;
+      login1WinStreakEnabledToggle.checked = state.login1WinStreakLimitEnabled;
+      login1WinStreakFieldWrap.style.display = state.login1WinStreakLimitEnabled ? "" : "none";
+    }
     if(data.login2ProfitTarget != null){ login2ProfitInput.value = data.login2ProfitTarget; state.login2ProfitTarget = data.login2ProfitTarget; }
+    if(data.login2TimerMinutes != null){ login2TimerInput.value = data.login2TimerMinutes; state.login2TimerMinutes = data.login2TimerMinutes; }
+    if(data.login2TimerEnabled != null){
+      state.login2TimerEnabled = !!data.login2TimerEnabled;
+      login2TimerEnabledToggle.checked = state.login2TimerEnabled;
+      login2TimerFieldWrap.style.display = state.login2TimerEnabled ? "" : "none";
+    }
     if(data.dualMode != null){
       state.dualMode = !!data.dualMode;
       dualModeToggle.checked = state.dualMode;
@@ -2709,10 +3225,19 @@
       loginOneBadge.style.display = state.dualMode ? "" : "none";
     }
 
+    if(Array.isArray(data.vaultBoxes)){
+      // Defensively re-cap at load time too, in case vaultCap was ever
+      // lowered or a saved payload from another build has more than 50.
+      state.vaultBoxes = data.vaultBoxes.slice(-state.vaultCap);
+    }
+    if(typeof data.vaultTotal === "number") state.vaultTotal = data.vaultTotal;
+    if(typeof data.vaultNextId === "number") state.vaultNextId = data.vaultNextId;
+
     updateDurationHint();
     updateCycleWaitHint();
     renderCycleStatus();
     renderDualStatus();
+    renderVault();
   }
 
   /* ===================== SESSION TIMER ===================== */
@@ -2749,6 +3274,12 @@
   resetSessionBtn.addEventListener("click", function(){
     if(confirm("Reset session stats and clear the trade log? This can't be undone.")){
       resetSession();
+    }
+  });
+  vaultClearBtn.addEventListener("click", function(){
+    if(!state.vaultBoxes.length && !state.vaultTotal) return;
+    if(confirm("Clear all " + state.vaultBoxes.length + " vault box(es) and reset the vault total to 0? This can't be undone.")){
+      clearVault();
     }
   });
 
@@ -2788,6 +3319,20 @@
 
   reverseToggle.addEventListener("change", function(){
     state.reverseMode = this.checked;
+    // Outside dual mode (or with condition 3 off), this checkbox is just a
+    // plain manual setting — nothing else touches it.
+    //
+    // While dual mode AND condition 3 are both enabled, condition 3 owns
+    // reverse mode's lifecycle for the duration of the Login 1 -> Login 2 ->
+    // Login 1 cycle: a manual click here changes it for right now, but does
+    // NOT create a lasting opt-out. The next Login 2 -> Login 1 switch will
+    // still turn it back off, same as if the person had never touched it —
+    // that's the whole point of "dual mode overrides manual" here. So
+    // dualReverseArmed is intentionally left alone by a manual click while
+    // that combination is active, rather than being cleared.
+    if(!(state.dualMode && state.login1WinStreakLimitEnabled)){
+      state.dualReverseArmed = false;
+    }
     savePersisted();
   });
 
