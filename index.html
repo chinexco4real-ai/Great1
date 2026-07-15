@@ -487,8 +487,23 @@
             <span class="slider"></span>
           </label>
         </div>
-        <div class="field" id="login1WinStreakFieldWrap" style="display:none;">
+        <div class="field" id="login1WinStreakFieldWrap" style="display:none; margin-bottom:12px;">
           <div class="num-field"><input type="number" id="login1WinStreakInput" value="3" min="1" step="1"></div>
+          <div class="field-hint">Straight winning trades, count.</div>
+        </div>
+
+        <div class="toggle-row" style="padding:0; margin-bottom:8px; border-top:1px solid var(--line-soft); padding-top:10px;">
+          <div>
+            <div class="toggle-label">Condition 4 — consecutive wins (plain)</div>
+            <div class="toggle-sub">Switch once this many winning trades happen in a row on Login 1. Unlike condition 3, this does not touch reverse mode — it's a plain switch.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="login1WinStreak2EnabledToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="field" id="login1WinStreak2FieldWrap" style="display:none;">
+          <div class="num-field"><input type="number" id="login1WinStreak2Input" value="3" min="1" step="1"></div>
           <div class="field-hint">Straight winning trades, count.</div>
         </div>
       </div>
@@ -936,6 +951,8 @@
     login1WinStreakLimitEnabled: false, // condition 3 on/off — independent of the others; whichever condition is met FIRST triggers the switch
     consecutiveWins: 0,            // running count of straight winning trades on the currently active login; any loss resets it to 0
     dualReverseArmed: false,        // true once condition 3 has armed reverse mode for the current Login-2 leg — purely informational/display now (see renderDualStatus); the actual arm/disarm logic keys off dualMode + login1WinStreakLimitEnabled directly so manual toggling can never create a lasting opt-out while that combination is active
+    login1WinStreak2Limit: 3,      // Login 1 -> Login 2 trigger (condition 4): switches once this many WINNING trades happen in a row. Plain switch — no reverse-mode side effect. 0 = condition disabled.
+    login1WinStreak2LimitEnabled: false, // condition 4 on/off — independent of the others; whichever condition is met FIRST triggers the switch. Shares the same consecutiveWins counter as condition 3.
     login2ProfitTarget: 5,     // Login 2 -> Login 1 trigger: switches once net P&L reaches +this amount
     login2TimerEnabled: false,   // Login 2 -> Login 1 trigger (timer close): switches once this countdown runs out, whichever of profit target / countdown hits first
     login2TimerMinutes: 15,       // countdown length, in minutes, manually set
@@ -1037,6 +1054,8 @@
   const login1StreakInput = $("login1StreakInput");
   const login1WinStreakEnabledToggle = $("login1WinStreakEnabledToggle"), login1WinStreakFieldWrap = $("login1WinStreakFieldWrap");
   const login1WinStreakInput = $("login1WinStreakInput");
+  const login1WinStreak2EnabledToggle = $("login1WinStreak2EnabledToggle"), login1WinStreak2FieldWrap = $("login1WinStreak2FieldWrap");
+  const login1WinStreak2Input = $("login1WinStreak2Input");
   const login2TimerEnabledToggle = $("login2TimerEnabledToggle"), login2TimerFieldWrap = $("login2TimerFieldWrap");
   const login2TimerInput = $("login2TimerInput");
   const env2Select = $("env2Select");
@@ -1112,6 +1131,17 @@
   });
   login1WinStreakInput.addEventListener("change", function(){
     state.login1WinStreakLimit = Math.max(1, parseInt(this.value, 10) || 0);
+    renderDualStatus();
+    savePersisted();
+  });
+  login1WinStreak2EnabledToggle.addEventListener("change", function(){
+    state.login1WinStreak2LimitEnabled = this.checked;
+    login1WinStreak2FieldWrap.style.display = this.checked ? "" : "none";
+    renderDualStatus();
+    savePersisted();
+  });
+  login1WinStreak2Input.addEventListener("change", function(){
+    state.login1WinStreak2Limit = Math.max(1, parseInt(this.value, 10) || 0);
     renderDualStatus();
     savePersisted();
   });
@@ -2555,6 +2585,11 @@
   //     it for right now, but does not create a lasting opt-out — the next
   //     switch-back still turns it off regardless. Manual clicks only stick
   //     once dual mode or condition 3 is turned off.
+  //   - Condition 4 (consecutive wins, plain): same trigger as condition 3 —
+  //     switches once this many winning trades happen in a row, sharing the
+  //     same consecutiveWins counter — but with NO reverse-mode side effect.
+  //     A plain switch, for people who want the win-streak trigger without
+  //     also fading the strategy on Login 2.
   // If more than one condition is enabled, whichever is met FIRST triggers
   // the switch — they are not ANDed together, each is checked independently
   // on every settlement and the first one to go true wins.
@@ -2586,11 +2621,16 @@
       const lossHit = state.login1LossLimitEnabled && state.login1LossLimit > 0 && pnl <= -Math.abs(state.login1LossLimit);
       const streakHit = state.login1StreakLimitEnabled && state.login1StreakLimit > 0 && state.consecutiveLosses >= state.login1StreakLimit;
       const winStreakHit = state.login1WinStreakLimitEnabled && state.login1WinStreakLimit > 0 && state.consecutiveWins >= state.login1WinStreakLimit;
-      // All three conditions are checked every settlement; whichever is true
+      const winStreak2Hit = state.login1WinStreak2LimitEnabled && state.login1WinStreak2Limit > 0 && state.consecutiveWins >= state.login1WinStreak2Limit;
+      // All four conditions are checked every settlement; whichever is true
       // first (in practice: whichever this settlement just satisfied) wins.
       // If a single settlement happens to satisfy more than one at once,
-      // priority is loss limit > loss streak > win streak, since the loss-
-      // side conditions are the more consequential (capital-preserving) ones.
+      // priority is loss limit > loss streak > win streak (reverse-arming) >
+      // win streak (plain), since the loss-side conditions are the more
+      // consequential (capital-preserving) ones, and condition 3's reverse-
+      // mode side effect is treated as the more specific/deliberate choice
+      // when both win-streak conditions are enabled with the same or lower
+      // count as condition 4.
       if(lossHit){
         hit = true;
         triggerLabel = "condition 1: loss limit -" + state.login1LossLimit.toFixed(2);
@@ -2601,6 +2641,9 @@
         hit = true;
         armReverse = true;
         triggerLabel = "condition 3: " + state.consecutiveWins + " consecutive wins (limit " + state.login1WinStreakLimit + ")";
+      } else if(winStreak2Hit){
+        hit = true;
+        triggerLabel = "condition 4: " + state.consecutiveWins + " consecutive wins (limit " + state.login1WinStreak2Limit + ")";
       }
     } else {
       // Login 2 has two competing exit conditions: profit target (checked
@@ -2925,7 +2968,10 @@
         parts.push(state.consecutiveLosses + " / " + state.login1StreakLimit + " consecutive losses");
       }
       if(state.login1WinStreakLimitEnabled && state.login1WinStreakLimit > 0){
-        parts.push(state.consecutiveWins + " / " + state.login1WinStreakLimit + " consecutive wins");
+        parts.push(state.consecutiveWins + " / " + state.login1WinStreakLimit + " consecutive wins (cond. 3, reverse-arm)");
+      }
+      if(state.login1WinStreak2LimitEnabled && state.login1WinStreak2Limit > 0){
+        parts.push(state.consecutiveWins + " / " + state.login1WinStreak2Limit + " consecutive wins (cond. 4, plain)");
       }
       conditionLines = parts.length ? parts.join(" \u00b7 ") : "no switch conditions enabled for Login 1";
     } else {
@@ -3306,6 +3352,8 @@
         login1StreakLimitEnabled: login1StreakEnabledToggle.checked,
         login1WinStreakLimit: parseInt(login1WinStreakInput.value, 10) || 0,
         login1WinStreakLimitEnabled: login1WinStreakEnabledToggle.checked,
+        login1WinStreak2Limit: parseInt(login1WinStreak2Input.value, 10) || 0,
+        login1WinStreak2LimitEnabled: login1WinStreak2EnabledToggle.checked,
         login2ProfitTarget: parseFloat(login2ProfitInput.value) || 0,
         login2TimerEnabled: login2TimerEnabledToggle.checked,
         login2TimerMinutes: parseInt(login2TimerInput.value, 10) || 0,
@@ -3435,6 +3483,12 @@
       state.login1WinStreakLimitEnabled = !!data.login1WinStreakLimitEnabled;
       login1WinStreakEnabledToggle.checked = state.login1WinStreakLimitEnabled;
       login1WinStreakFieldWrap.style.display = state.login1WinStreakLimitEnabled ? "" : "none";
+    }
+    if(data.login1WinStreak2Limit != null){ login1WinStreak2Input.value = data.login1WinStreak2Limit; state.login1WinStreak2Limit = data.login1WinStreak2Limit; }
+    if(data.login1WinStreak2LimitEnabled != null){
+      state.login1WinStreak2LimitEnabled = !!data.login1WinStreak2LimitEnabled;
+      login1WinStreak2EnabledToggle.checked = state.login1WinStreak2LimitEnabled;
+      login1WinStreak2FieldWrap.style.display = state.login1WinStreak2LimitEnabled ? "" : "none";
     }
     if(data.login2ProfitTarget != null){ login2ProfitInput.value = data.login2ProfitTarget; state.login2ProfitTarget = data.login2ProfitTarget; }
     if(data.login2TimerMinutes != null){ login2TimerInput.value = data.login2TimerMinutes; state.login2TimerMinutes = data.login2TimerMinutes; }
