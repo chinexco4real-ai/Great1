@@ -87,15 +87,6 @@
   .field-hint{ font-size:10.5px; color:var(--ink-faint); margin-top:6px; line-height:1.5; }
   .field-hint a{ color:var(--rise); text-decoration:none; }
   .field-hint a:hover{ text-decoration:underline; }
-  .cycle-status{
-    margin-top:4px; padding:10px 12px; border-radius:8px;
-    background:var(--panel-2); border:1px solid var(--line);
-    font-size:11.5px; color:var(--ink-dim); line-height:1.6;
-  }
-  .cycle-status b{ color:var(--ink); }
-  .cycle-status .cd{ color:var(--amber); font-weight:600; }
-  .cycle-status.done{ border-color:var(--rise-dim); background:rgba(61,220,151,0.06); }
-  .cycle-status.done .cd{ color:var(--rise); }
   .row{ display:flex; gap:10px; }
   .row .field{ flex:1; }
 
@@ -308,26 +299,6 @@
   .conn-row{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
   .conn-row .field{ margin-bottom:0; }
 
-  .filter-list{ display:flex; flex-direction:column; }
-  .filter-item{
-    display:flex; align-items:flex-start; gap:10px;
-    padding:10px 12px; border:1px solid var(--wire); border-radius:8px;
-    margin-bottom:8px; cursor:pointer; transition:border-color .15s, background .15s;
-  }
-  .filter-item:hover{ border-color:var(--ink-faint); }
-  .filter-item.checked{ border-color:var(--rise-dim); background:rgba(0,255,150,0.04); }
-  .filter-item input{ margin-top:2px; flex-shrink:0; accent-color:var(--rise); width:15px; height:15px; cursor:pointer; }
-  .filter-item-body{ flex:1; }
-  .filter-item-title{ font-size:12.5px; font-weight:600; color:var(--ink); }
-  .filter-item-sub{ font-size:10.5px; color:var(--ink-faint); margin-top:2px; line-height:1.4; }
-  .filter-reject-note{ font-size:10.5px; color:var(--fall); margin-top:4px; }
-  .vol-mode-btn{
-    flex:1; font-size:10.5px; font-weight:600; padding:6px 8px; border-radius:6px;
-    border:1px solid var(--wire); background:transparent; color:var(--ink-faint);
-    cursor:pointer; transition:border-color .15s, background .15s, color .15s;
-  }
-  .vol-mode-btn:hover{ border-color:var(--ink-faint); }
-  .vol-mode-btn.active{ border-color:var(--rise-dim); background:rgba(0,255,150,0.08); color:var(--ink); }
   #connPanel.connected{ border-color:var(--rise-dim); }
   #connPanel.connected #connRow{ opacity:0.55; pointer-events:none; }
   #connPanel.connected #connHint{ display:none; }
@@ -582,14 +553,6 @@
               <div class="factor-name">Rejection wick</div>
               <div class="factor-val neu" id="fRejection">none</div>
             </div>
-            <div class="factor">
-              <div class="factor-name">Volatility regime</div>
-              <div class="factor-val neu" id="fVolRegime">— pct</div>
-            </div>
-            <div class="factor">
-              <div class="factor-name">Price exhaustion (z)</div>
-              <div class="factor-val neu" id="fExtreme">— z</div>
-            </div>
           </div>
         </div>
 
@@ -643,29 +606,6 @@
             </label>
           </div>
 
-          <div class="toggle-row">
-            <div>
-              <div class="toggle-label">Alternator mode</div>
-              <div class="toggle-sub">Forces strict BUY → SELL → BUY → SELL alternation. A repeat-direction signal is blocked no matter how strong or how many filters agree — the EA waits for the opposite direction. Applies on top of every signal and filter.</div>
-            </div>
-            <label class="switch">
-              <input type="checkbox" id="alternatorToggle">
-              <span class="slider"></span>
-            </label>
-          </div>
-          <div class="field-hint" id="alternatorHint" style="display:none;">Next required direction: <b id="alternatorNext">either (no trade yet this session)</b></div>
-
-          <div class="toggle-row">
-            <div>
-              <div class="toggle-label">Reverse mode</div>
-              <div class="toggle-sub">Flips the final decided direction right before placing the trade — a would-be BUY is placed as SELL, and a would-be SELL as BUY. Applied last, after every signal, filter, and the alternator gate.</div>
-            </div>
-            <label class="switch">
-              <input type="checkbox" id="reverseToggle">
-              <span class="slider"></span>
-            </label>
-          </div>
-
           <div class="field">
             <label>Minimum signal strength to trade</label>
             <div class="seg" id="strengthSeg">
@@ -674,75 +614,6 @@
               <button data-v="high">High only</button>
             </div>
             <div class="field-hint">Only signals at or above this strength will trigger an auto-trade.</div>
-          </div>
-
-          <div class="field">
-            <label>Entry confirmation filters</label>
-            <div class="filter-list" id="filterList">
-              <label class="filter-item" data-filter="hhhl">
-                <input type="checkbox" id="filterHhHl">
-                <div class="filter-item-body">
-                  <div class="filter-item-title">HH / HL (uptrend) — LL / LH for sell</div>
-                  <div class="filter-item-sub">Requires the strict "HH / HL (uptrend)" structure label for BUY, or "LL / LH (downtrend)" for SELL.</div>
-                </div>
-              </label>
-              <label class="filter-item" data-filter="lowerRejection">
-                <input type="checkbox" id="filterLowerRejection">
-                <div class="filter-item-body">
-                  <div class="filter-item-title">Lower rejection — upper rejection for sell</div>
-                  <div class="filter-item-sub">Requires specifically a "lower rejection" for BUY, or an "upper rejection" for SELL.</div>
-                </div>
-              </label>
-              <label class="filter-item" data-filter="volRegime">
-                <input type="checkbox" id="filterVolRegime">
-                <div class="filter-item-body">
-                  <div class="filter-item-title">Volatility regime — skip dead &amp; spike conditions</div>
-                  <div class="filter-item-sub">Blocks trades when current tick-to-tick range sits outside a normal band vs. its own recent history: too low means a flat/asleep market, too high means a spike or whipsaw aftermath that's prone to snapping back.</div>
-
-                  <div class="row" style="margin-top:10px; gap:6px;" onclick="event.stopPropagation()">
-                    <button type="button" class="vol-mode-btn" id="volModeBandBtn" data-mode="band">Band (low–high)</button>
-                    <button type="button" class="vol-mode-btn" id="volModeAboveBtn" data-mode="above">Above only</button>
-                  </div>
-
-                  <div id="volBandControls">
-                    <div class="row" style="margin-top:8px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
-                      <span class="filter-item-sub" style="min-width:28px;">Low</span>
-                      <input type="range" id="volRegimeLow" min="0" max="50" step="5" value="20" style="flex:1;">
-                      <span class="factor-val neu" id="volRegimeLowVal" style="min-width:32px; text-align:right;">20th</span>
-                    </div>
-                    <div class="row" style="margin-top:6px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
-                      <span class="filter-item-sub" style="min-width:28px;">High</span>
-                      <input type="range" id="volRegimeHigh" min="50" max="100" step="5" value="90" style="flex:1;">
-                      <span class="factor-val neu" id="volRegimeHighVal" style="min-width:32px; text-align:right;">90th</span>
-                    </div>
-                  </div>
-
-                  <div id="volAboveControls" style="display:none;">
-                    <div class="row" style="margin-top:8px; align-items:center; gap:8px;" onclick="event.stopPropagation()">
-                      <span class="filter-item-sub" style="min-width:28px;">Above</span>
-                      <input type="range" id="volRegimeAbove" min="50" max="99" step="1" value="80" style="flex:1;">
-                      <span class="factor-val neu" id="volRegimeAboveVal" style="min-width:32px; text-align:right;">80th</span>
-                    </div>
-                    <div class="filter-item-sub" style="margin-top:4px;">Only trades when volatility is at or above this percentile — e.g. set to 80 to trade only during the top ~20% most active moments. Ignores the low/high band above while this mode is active.</div>
-                  </div>
-                </div>
-              </label>
-              <label class="filter-item" data-filter="extremeEntry">
-                <input type="checkbox" id="filterExtremeEntry">
-                <div class="filter-item-body">
-                  <div class="filter-item-title">Extreme entry — BUY only when exhausted high, SELL only when exhausted low</div>
-                  <div class="filter-item-sub">Genuine exhaustion filter, not "last tick was a new high." Measures the net price move over the last 8 ticks, then compares it to how big 8-tick moves have typically been over the preceding 60 ticks (a z-score). BUY is only allowed when the current 8-tick run has moved further upward than typical runs of that length — a real, statistically unusual extension, not just an ordinary continuing trend. SELL requires the mirror: a run that's moved further downward than usual. An ordinary mid-trend tick that simply continues a normal-sized run will not trigger this; only a stretch that has actually outpaced its own recent normal will.</div>
-
-                  <div class="row" style="margin-top:10px; gap:6px;" onclick="event.stopPropagation()">
-                    <button type="button" class="vol-mode-btn" id="exhaustionZ2Btn" data-z="2">2z (standard)</button>
-                    <button type="button" class="vol-mode-btn" id="exhaustionZ3Btn" data-z="3">3z (sharp)</button>
-                    <button type="button" class="vol-mode-btn" id="exhaustionZ4Btn" data-z="4">4z (very sharp only)</button>
-                  </div>
-                  <div class="filter-item-sub" style="margin-top:4px;">2z is the standard outlier threshold — catches most genuine exhaustion moves. 4z only allows the sharpest, rarest spikes/drops through — far fewer trades, but each one is a much more extreme move.</div>
-                </div>
-              </label>
-            </div>
-            <div class="field-hint">Select any combination — or none. Every filter you check must be satisfied at the moment of the signal, or the auto-trade is rejected. Leave all unchecked to trade on signal strength alone.</div>
           </div>
 
           <div class="row">
@@ -775,40 +646,6 @@
             </div>
           </div>
           <div class="field-hint" style="margin-top:-8px;">Set target to 0 to disable it. Auto-trading stops itself when either limit is hit — no martingale, no stake recovery, flat stake every trade.</div>
-
-          <div class="toggle-row" style="margin-top:6px; padding-top:10px; border-top:1px solid var(--line-soft);">
-            <div>
-              <div class="toggle-label">Waiting-timer mode</div>
-              <div class="toggle-sub">When session profit hits the cycle target below, the EA pauses, wipes stats/log, counts down, then resumes — on repeat. The daily target tracks total profit across every cycle and stops the EA for good once reached.</div>
-            </div>
-            <label class="switch">
-              <input type="checkbox" id="waitTimerToggle">
-              <span class="slider"></span>
-            </label>
-          </div>
-
-          <div class="row">
-            <div class="field">
-              <label>Cycle profit target (USD)</label>
-              <div class="num-field"><input type="number" id="cycleTargetInput" value="5" min="0" step="0.5"></div>
-            </div>
-            <div class="field">
-              <label>Countdown before resume</label>
-              <div class="row" style="gap:8px;">
-                <div class="num-field" style="flex:1;"><input type="number" id="cycleWaitHourInput" value="0" min="0" step="1" placeholder="hr"></div>
-                <div class="num-field" style="flex:1;"><input type="number" id="cycleWaitMinInput" value="5" min="0" step="1" placeholder="min"></div>
-              </div>
-              <div class="field-hint" id="cycleWaitHint">5 minutes</div>
-            </div>
-          </div>
-
-          <div class="field">
-            <label>Daily target — accumulated across all cycles (USD)</label>
-            <div class="num-field"><input type="number" id="dailyCycleTargetInput" value="0" min="0" step="1"></div>
-            <div class="field-hint">Set to 0 to disable. Once total accumulated profit reaches this, the EA stops trading completely — the cycle ends.</div>
-          </div>
-
-          <div class="cycle-status" id="cycleStatus" style="display:none;"></div>
 
           <div class="field">
             <label>Cooldown between trades</label>
@@ -858,20 +695,6 @@
     pending: {},           // req_id -> handler
     autoTrade: false,
     minStrength: "medium", // low | medium | high
-    filters: {              // entry confirmation filters — all checked ones must pass or the trade is rejected
-      hhhl: false,
-      lowerRejection: false,
-      volRegime: false,
-      extremeEntry: false
-    },
-    volRegimeLow: 20,   // reject trades when current tick-range percentile is below this (dead/flat market)
-    volRegimeHigh: 90,  // reject trades when current tick-range percentile is above this (spike/whipsaw aftermath)
-    volRegimeMode: "band", // "band" = use low/high band above | "above" = only trade when percentile >= volRegimeAbove
-    exhaustionZ: 2,        // extreme entry filter strictness — 2 (standard outlier threshold), 3 (sharp), or 4 (only very sharp spikes/drops)
-    volRegimeAbove: 80, // when mode is "above", only trade when current percentile >= this (50-100)
-    alternatorMode: false,   // when on, forces strict BUY/SELL alternation regardless of signal/filters
-    lastTradeDir: 0,         // direction (1/-1) of the last trade actually placed; 0 = none yet this session
-    reverseMode: false,      // when on, flips the final decided direction (BUY->SELL, SELL->BUY) right before placing
     stake: 1,
     durationValue: 5,
     durationUnit: "t", // t = ticks, s = seconds, m = minutes
@@ -897,18 +720,6 @@
     reconnectTimer: null,
     reconnectInFlight: false, // guards against overlapping establishConnection() calls racing each other
     authStageFailCount: 0,    // consecutive pre-socket (REST-leg) failures; caps auto-retry so a blocked/rejected connection doesn't loop forever
-
-    // ── Waiting-timer mode ──────────────────────────────────────────────
-    waitTimerMode: false,     // master switch for the cycle feature
-    cycleTarget: 5,           // profit (USD) that ends the current cycle and starts the countdown
-    cycleWaitHour: 0,
-    cycleWaitMin: 5,
-    dailyCycleTarget: 0,      // 0 = disabled. Total accumulated profit across all cycles that stops the EA for good
-    cycleAccumPnl: 0,         // running total across every completed cycle, survives per-cycle stat resets
-    cyclePaused: false,       // true while the countdown is running (trading paused, not toggled off)
-    cycleCountdownEndsAt: 0,  // epoch ms
-    cycleCountdownHandle: null,
-    cycleFinished: false,     // true once the daily cycle target has been reached — hard stop, no more cycles
 
     // ── Dual login auto-switch ──────────────────────────────────────────
     dualMode: false,          // master switch for the dual-login feature
@@ -1119,28 +930,10 @@
   const priceMain = $("priceMain"), priceDelta = $("priceDelta"), priceMeta = $("priceMeta");
   const tapeEl = $("tape");
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
-  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection"), fVolRegime = $("fVolRegime"), fExtreme = $("fExtreme");
+  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection");
   const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
-  const alternatorToggle = $("alternatorToggle"), alternatorHint = $("alternatorHint"), alternatorNext = $("alternatorNext");
-  const reverseToggle = $("reverseToggle");
-  const filterHhHl = $("filterHhHl"), filterLowerRejection = $("filterLowerRejection"), filterVolRegime = $("filterVolRegime"), filterExtremeEntry = $("filterExtremeEntry");
-  const filterCheckboxes = {
-    hhhl: filterHhHl,
-    lowerRejection: filterLowerRejection,
-    volRegime: filterVolRegime,
-    extremeEntry: filterExtremeEntry
-  };
-  const volRegimeLowInput = $("volRegimeLow"), volRegimeLowVal = $("volRegimeLowVal");
-  const volRegimeHighInput = $("volRegimeHigh"), volRegimeHighVal = $("volRegimeHighVal");
-  const volRegimeAboveInput = $("volRegimeAbove"), volRegimeAboveVal = $("volRegimeAboveVal");
-  const volModeBandBtn = $("volModeBandBtn"), volModeAboveBtn = $("volModeAboveBtn");
-  const exhaustionZ2Btn = $("exhaustionZ2Btn"), exhaustionZ3Btn = $("exhaustionZ3Btn"), exhaustionZ4Btn = $("exhaustionZ4Btn");
-  const volBandControls = $("volBandControls"), volAboveControls = $("volAboveControls");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
-  const waitTimerToggle = $("waitTimerToggle"), cycleTargetInput = $("cycleTargetInput");
-  const cycleWaitHourInput = $("cycleWaitHourInput"), cycleWaitMinInput = $("cycleWaitMinInput"), cycleWaitHint = $("cycleWaitHint");
-  const dailyCycleTargetInput = $("dailyCycleTargetInput"), cycleStatus = $("cycleStatus");
   const statTotal = $("statTotal"), statWon = $("statWon"), statLost = $("statLost"), statPnl = $("statPnl");
   const resetSessionBtn = $("resetSessionBtn");
   const tradeLog = $("tradeLog");
@@ -1867,7 +1660,6 @@
   function endSessionManually(){
     disconnectSession();
     resetSession();
-    resetWaitTimerCycle();
     if(state.autoTrade){
       state.autoTrade = false;
       autoToggle.checked = false;
@@ -2024,28 +1816,6 @@
     // --- Factor 4: rejection / snap-back detection ---
     const rejection = detectRejection(prices);
 
-    // --- Trend filters (not part of the composite score — only used to gate
-    // auto-trades if the corresponding checkbox is enabled): computed over
-    // the FULL tick buffer, not the short 40-tick signal window, so they
-    // reflect the broader trend rather than the immediate micro-move. ---
-    const allPrices = ticks.map(t => t.price);
-
-    // --- Factor 5: volatility regime (gate-only). Deriv's synthetic indices
-    // are built to produce periodic large spikes on top of otherwise steady
-    // background volatility — right as a spike lands, momentum/velocity/structure
-    // often all light up together, but that's exactly the moment least likely
-    // to hold: the very next ticks are often the mean-reversion snapback, not
-    // a new trend. This ranks the current short-window tick range against its
-    // own recent history (the tick-native analogue of an ATR percentile) so
-    // both dead/flat chop and fresh-spike aftermath can be filtered out,
-    // independent of direction. ---
-    const volPercentile = computeVolatilityPercentile(allPrices);
-
-    // --- Factor 7: extreme entry (gate-only) — is the current move actually
-    // stretched/exhausted vs. its own recent normal, used to require
-    // BUY-at-exhausted-highs / SELL-at-exhausted-lows. ---
-    const priceExhaustion = computePriceExhaustion(allPrices, EXHAUSTION_BASELINE, EXHAUSTION_RUN_WINDOW);
-
     // --- Combine into weighted composite ---
     // Base direction = majority vote among momentum, velocity, structure
     const votes = [ [runDir, momentumScore*1.0], [velocityDir, velocityScore*0.9], [structureDir, structureScore*1.1] ];
@@ -2080,90 +1850,9 @@
     else { level = "none"; levelLabel = "NO SIGNAL"; compositeDir = 0; }
 
     renderSignal(level, levelLabel, compositeDir, compositeScore);
-    renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, volPercentile, priceExhaustion);
+    renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection);
 
-    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection, volPercentile, priceExhaustion);
-  }
-
-  // Volatility regime percentile: builds a rolling series of local tick-range
-  // values (tick-native stand-in for ATR — no OHLC bars needed) across the
-  // full tick buffer, then ranks the most recent reading against that
-  // series' own history. Returns 0-100, or null if there isn't enough
-  // buffer yet to form a meaningful distribution.
-  //   - local range for window i = max(prices in an 8-tick slice) - min(...)
-  //   - percentile = % of historical windows the current window's range beats
-  // A tick-native analogue of "ATR percentile over the last N periods".
-  function computeVolatilityPercentile(prices){
-    const RANGE_WINDOW = 8;   // ticks per local range sample
-    const MIN_SAMPLES = 20;   // need at least this many range samples to rank against
-    if(prices.length < RANGE_WINDOW + MIN_SAMPLES) return null;
-
-    const ranges = [];
-    for(let i = RANGE_WINDOW; i <= prices.length; i++){
-      const slice = prices.slice(i - RANGE_WINDOW, i);
-      ranges.push(Math.max(...slice) - Math.min(...slice));
-    }
-    const current = ranges[ranges.length - 1];
-    const history = ranges.slice(0, -1); // everything except the current reading
-    if(history.length < MIN_SAMPLES) return null;
-
-    // Mean-rank percentile: strictly-below counts fully, ties count as half.
-    // This matters specifically for the flat/dead-market case — if every
-    // historical range is 0 and the current one is also 0, a naive "<=" count
-    // would wrongly report the 100th percentile (looks like a spike) when the
-    // honest answer is "perfectly average for this market" — i.e. the 50th.
-    let below = 0, tied = 0;
-    for(let i = 0; i < history.length; i++){
-      if(history[i] < current) below++;
-      else if(history[i] === current) tied++;
-    }
-    return Math.round(((below + tied * 0.5) / history.length) * 100);
-  }
-
-  // Baseline history length and run-window used to measure exhaustion.
-  // Fixed, standard values — not adjustable. The strictness threshold itself
-  // (state.exhaustionZ) IS adjustable via the UI: 2 = standard outlier
-  // convention for "unusually far from normal," 4 = only very sharp,
-  // rarer spikes/drops.
-  const EXHAUSTION_BASELINE = 60;
-  const EXHAUSTION_RUN_WINDOW = 8; // matches the momentum factor's saturation window
-
-  // Is the current move actually STRETCHED, or did price just tick up last?
-  // A naive "am I the max of the last N ticks" or "how far from the mean of
-  // single-tick noise" both fail: a monotonic run's last tick is almost
-  // always its own max, and comparing net drift to single-tick noise makes
-  // even an ordinary trend read as wildly "exhausted" (net drift over a
-  // window naturally dwarfs single-tick jitter).
-  //
-  // What actually distinguishes exhaustion from ordinary trending: is THIS
-  // run bigger than runs of the same length usually are? So this measures
-  // the net price change over the last EXHAUSTION_RUN_WINDOW ticks, then
-  // z-scores that against the distribution of same-length net changes
-  // sampled across a longer baseline history. A positive z means this run
-  // has traveled further upward than typical runs of its length — a
-  // genuine, statistically unusual extension, not just "price went up."
-  function computePriceExhaustion(prices, baseline, runWindow){
-    const MIN_SAMPLES = 15;
-    if(prices.length < baseline + runWindow) return null;
-
-    const slice = prices.slice(-(baseline + runWindow));
-    const current = slice[slice.length - 1];
-    const currentStart = slice[slice.length - 1 - runWindow];
-    const currentMove = current - currentStart;
-
-    // sample historical net moves of the same window length across the baseline
-    const historical = [];
-    for(let i = 0; i <= slice.length - runWindow - 1; i++){
-      historical.push(slice[i + runWindow] - slice[i]);
-    }
-    if(historical.length < MIN_SAMPLES) return null;
-
-    const mean = historical.reduce((s,v)=>s+v,0) / historical.length;
-    const variance = historical.reduce((s,v)=>s+(v-mean)*(v-mean),0) / historical.length;
-    const sd = Math.sqrt(variance);
-    if(sd === 0) return 0; // perfectly flat baseline — no exhaustion possible
-
-    return (currentMove - mean) / sd;
+    maybeAutoTrade(level, compositeDir, compositeScore, structure, rejection);
   }
 
   function avgAbsoluteStep(prices){
@@ -2245,11 +1934,9 @@
     fVelocity.textContent = "0.000/s"; fVelocity.className="factor-val neu";
     fStructure.textContent = "flat"; fStructure.className="factor-val neu";
     fRejection.textContent = "none"; fRejection.className="factor-val neu";
-    fVolRegime.textContent = "— pct"; fVolRegime.className="factor-val neu";
-    fExtreme.textContent = "— z"; fExtreme.className="factor-val neu";
   }
 
-  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, volPercentile, priceExhaustion){
+  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection){
     fMomentum.textContent = runLen + " tick" + (runLen===1?"":"s") + (runDir>0?" up":runDir<0?" down":"");
     fMomentum.className = "factor-val " + (runDir>0?"pos":runDir<0?"neg":"neu");
 
@@ -2261,90 +1948,18 @@
 
     fRejection.textContent = rejection.detected ? rejection.label : "none";
     fRejection.className = "factor-val " + (rejection.detected ? (rejection.dir>0?"pos":"neg") : "neu");
-
-    if(volPercentile === null){
-      fVolRegime.textContent = "warming up";
-      fVolRegime.className = "factor-val neu";
-    } else {
-      const passes = state.volRegimeMode === "above"
-        ? volPercentile >= state.volRegimeAbove
-        : (volPercentile >= state.volRegimeLow && volPercentile <= state.volRegimeHigh);
-      fVolRegime.textContent = volPercentile + "th pct";
-      fVolRegime.className = "factor-val " + (passes ? "pos" : "neg");
-    }
-
-    if(priceExhaustion === null){
-      fExtreme.textContent = "warming up";
-      fExtreme.className = "factor-val neu";
-    } else {
-      const atHigh = priceExhaustion >= state.exhaustionZ;
-      const atLow = priceExhaustion <= -state.exhaustionZ;
-      fExtreme.textContent = (priceExhaustion>=0?"+":"") + priceExhaustion.toFixed(2) + "z" + (atHigh ? " (exhausted high)" : atLow ? " (exhausted low)" : "");
-      fExtreme.className = "factor-val " + (atHigh ? "pos" : atLow ? "neg" : "neu");
-    }
   }
 
   /* ===================== AUTO-TRADE ===================== */
   const strengthRank = { none:0, low:1, medium:2, high:3 };
 
-  // Checks the user-selected entry confirmation filters against this signal's
-  // structure/rejection readouts. Returns { passed, reasons } — reasons lists
-  // any checked filter that failed, so the rejection can be logged clearly.
-  function checkEntryFilters(dir, structure, rejection, volPercentile, priceExhaustion){
-    const f = state.filters;
-    const reasons = [];
-
-    if(f.hhhl){
-      const wantLabel = dir > 0 ? "HH / HL (uptrend)" : "LL / LH (downtrend)";
-      if(structure.label !== wantLabel) reasons.push((dir>0 ? "HH/HL" : "LL/LH") + " structure not present (got: " + structure.label + ")");
-    }
-    if(f.lowerRejection){
-      const wantLabel = dir > 0 ? "lower rejection" : "upper rejection";
-      if(!rejection.detected || rejection.label !== wantLabel) reasons.push((dir>0 ? "Lower" : "Upper") + " rejection not present (got: " + (rejection.detected ? rejection.label : "none") + ")");
-    }
-    if(f.volRegime){
-      if(volPercentile === null){
-        reasons.push("Volatility regime not established yet (warming up tick history)");
-      } else if(state.volRegimeMode === "above"){
-        // Above-only mode: single floor, no ceiling — the low/high band is
-        // intentionally not applied here, so the two modes never conflict.
-        if(volPercentile < state.volRegimeAbove) reasons.push("Volatility below floor (" + volPercentile + "th pct < " + state.volRegimeAbove + "th — Above-only mode requires spikes at or above this level)");
-      } else {
-        // Band mode: reject both too-flat and too-spiky.
-        if(volPercentile < state.volRegimeLow) reasons.push("Volatility too low (" + volPercentile + "th pct < " + state.volRegimeLow + "th — market is flat/asleep)");
-        else if(volPercentile > state.volRegimeHigh) reasons.push("Volatility too high (" + volPercentile + "th pct > " + state.volRegimeHigh + "th — likely spike/whipsaw aftermath)");
-      }
-    }
-    if(f.extremeEntry){
-      if(priceExhaustion === null){
-        reasons.push("Extreme entry not established yet (warming up tick history)");
-      } else if(dir > 0 && priceExhaustion < state.exhaustionZ){
-        reasons.push("Not an exhausted high (price is " + priceExhaustion.toFixed(2) + "z from its " + EXHAUSTION_BASELINE + "-tick baseline, need >= +" + state.exhaustionZ + "z for BUY)");
-      } else if(dir < 0 && priceExhaustion > -state.exhaustionZ){
-        reasons.push("Not an exhausted low (price is " + priceExhaustion.toFixed(2) + "z from its " + EXHAUSTION_BASELINE + "-tick baseline, need <= -" + state.exhaustionZ + "z for SELL)");
-      }
-    }
-    return { passed: reasons.length === 0, reasons };
-  }
-
-  function maybeAutoTrade(level, dir, score, structure, rejection, volPercentile, priceExhaustion){
+  function maybeAutoTrade(level, dir, score, structure, rejection){
     if(!state.autoTrade) return;
     if(dir === 0 || level === "none") return;
     if(state.haltReason) return;
     if(state.tradeInFlight) return; // gatekeeper: never stack a second trade while one is open
-    if(state.cyclePaused) return;   // waiting-timer countdown in progress — no trades until it resumes
-    if(state.cycleFinished) return; // daily cycle target already reached — hard stop for the day
 
     if(strengthRank[level] < strengthRank[state.minStrength]) return;
-
-    const gate = checkEntryFilters(dir, structure, rejection, volPercentile, priceExhaustion);
-    if(!gate.passed){
-      // Filter rejections are expected/frequent (a filtered signal fires far more
-      // often than it passes) — block silently rather than flooding the trade log.
-      // Visible in console for debugging without cluttering the user-facing log.
-      console.debug("[TICKFRAME] Signal rejected by filter — " + gate.reasons.join("; "));
-      return;
-    }
 
     const now = Date.now();
     if(now - state.lastTradeTime < state.cooldown*1000) return;
@@ -2359,32 +1974,8 @@
       return;
     }
 
-    // ── ALTERNATOR GATE ──────────────────────────────────────────────────
-    // Hard override, checked last, after every other signal/filter has already
-    // passed. If alternator mode is on and this signal's direction is the same
-    // as the last trade actually placed, the trade is blocked — no exceptions,
-    // regardless of signal strength or how many filters agree. The EA simply
-    // waits for a signal in the opposite direction. This runs on top of every
-    // signal type and every filter combination; it never loosens them.
-    if(state.alternatorMode && state.lastTradeDir !== 0 && dir === state.lastTradeDir){
-      console.debug("[TICKFRAME] Alternator gate blocked repeat-direction signal (" + (dir>0?"BUY":"SELL") + ") — waiting for " + (dir>0?"SELL":"BUY"));
-      return;
-    }
-
-    // ── REVERSE MODE ─────────────────────────────────────────────────────
-    // Applied last, after every signal, filter, and the alternator gate have
-    // already settled on a final direction. Simply flips that final call:
-    // a would-be BUY is placed as SELL, and vice versa. Because this runs
-    // after the alternator check, the alternator still gates on the engine's
-    // original (pre-flip) direction — reverse mode only changes what actually
-    // gets traded and fed back into lastTradeDir, not what the alternator
-    // is watching for.
-    const finalDir = state.reverseMode ? -dir : dir;
-
     state.lastTradeTime = now;
-    if(state.alternatorMode) state.lastTradeDir = dir;
-    updateAlternatorHint();
-    placeTrade(finalDir, level, score);
+    placeTrade(dir, level, score);
   }
 
   function haltAutoTrade(reason){
@@ -2395,105 +1986,9 @@
     logSystemNote("Auto-trading stopped: " + reason);
   }
 
-  /* ===================== WAITING-TIMER MODE ===================== */
-  // Independent of the daily loss-limit / profit-target pair above. Runs a
-  // repeating cycle: trade → hit cycle profit target → pause + wipe stats/log
-  // → countdown → resume → repeat. A separate accumulator tracks total profit
-  // across every cycle; once that crosses the daily target the EA stops for
-  // good (this is the only exit from the loop).
-  //
-  // Checked right after a contract settles (see onOpenContract), using the
-  // same dailyPnl the existing daily limit pair already watches — so it only
-  // ever evaluates once per settlement, never on a timer, never spamming.
-  function checkWaitTimerCycle(){
-    if(!state.waitTimerMode || state.cyclePaused || state.cycleFinished) return;
-    if(state.haltReason) return; // a hard daily loss/profit halt already stopped things — don't also cycle
-    if(state.cycleTarget <= 0) return;
-    if(state.dailyPnl < state.cycleTarget) return;
-
-    state.cycleAccumPnl += state.dailyPnl;
-    renderCycleStatus();
-
-    if(state.dailyCycleTarget > 0 && state.cycleAccumPnl >= state.dailyCycleTarget){
-      state.cycleFinished = true;
-      state.autoTrade = false;
-      autoToggle.checked = false;
-      state.haltReason = "Daily target reached (" + state.cycleAccumPnl.toFixed(2) + " " + state.accountCurrency + ") — waiting-timer cycle complete";
-      updateMasterFlag();
-      logSystemNote("Daily target reached — " + state.cycleAccumPnl.toFixed(2) + " " + state.accountCurrency + " accumulated. EA stopped for the day.");
-      renderCycleStatus();
-      return;
-    }
-
-    startCycleCountdown();
-  }
-
-  function startCycleCountdown(){
-    state.cyclePaused = true;
-    resetSession(); // wipes stats + log for the new cycle, per spec — accumulator above is untouched
-    updateMasterFlag();
-
-    const waitMs = (Math.max(0, state.cycleWaitHour) * 3600 + Math.max(0, state.cycleWaitMin) * 60) * 1000;
-    state.cycleCountdownEndsAt = Date.now() + waitMs;
-    renderCycleStatus();
-
-    if(state.cycleCountdownHandle) clearInterval(state.cycleCountdownHandle);
-    state.cycleCountdownHandle = setInterval(function(){
-      if(Date.now() >= state.cycleCountdownEndsAt){
-        clearInterval(state.cycleCountdownHandle);
-        state.cycleCountdownHandle = null;
-        state.cyclePaused = false;
-        updateMasterFlag();
-        renderCycleStatus();
-      } else {
-        renderCycleStatus();
-      }
-    }, 1000);
-  }
-
-  function formatCountdown(ms){
-    const totalSec = Math.max(0, Math.ceil(ms / 1000));
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    const pad = n => String(n).padStart(2, "0");
-    return h > 0 ? (h + ":" + pad(m) + ":" + pad(s)) : (pad(m) + ":" + pad(s));
-  }
-
-  function renderCycleStatus(){
-    if(!state.waitTimerMode){
-      cycleStatus.style.display = "none";
-      return;
-    }
-    cycleStatus.style.display = "";
-    cycleStatus.classList.toggle("done", state.cycleFinished);
-
-    if(state.cycleFinished){
-      cycleStatus.innerHTML = "<b>Cycle complete.</b> Accumulated <b>" + state.cycleAccumPnl.toFixed(2) + " " + state.accountCurrency + "</b> — daily target reached, EA stopped.";
-    } else if(state.cyclePaused){
-      const remaining = state.cycleCountdownEndsAt - Date.now();
-      cycleStatus.innerHTML = "Paused — resumes in <span class=\"cd\">" + formatCountdown(remaining) + "</span> · accumulated so far: <b>" + state.cycleAccumPnl.toFixed(2) + " " + state.accountCurrency + "</b>";
-    } else {
-      const remainingToTarget = Math.max(0, state.cycleTarget - state.dailyPnl);
-      cycleStatus.innerHTML = "Running · " + remainingToTarget.toFixed(2) + " " + state.accountCurrency + " to next cycle target · accumulated: <b>" + state.cycleAccumPnl.toFixed(2) + " " + state.accountCurrency + "</b>" +
-        (state.dailyCycleTarget > 0 ? " / " + state.dailyCycleTarget.toFixed(2) + " " + state.accountCurrency + " daily" : "");
-    }
-  }
-
-  function resetWaitTimerCycle(){
-    if(state.cycleCountdownHandle){ clearInterval(state.cycleCountdownHandle); state.cycleCountdownHandle = null; }
-    state.cyclePaused = false;
-    state.cycleFinished = false;
-    state.cycleAccumPnl = 0;
-    state.cycleCountdownEndsAt = 0;
-    renderCycleStatus();
-  }
-
   /* ===================== DUAL LOGIN AUTO-SWITCH ===================== */
   // Checked right after every contract settlement (see onOpenContract), using
-  // the same dailyPnl the daily-limit pair and waiting-timer cycle already
-  // watch, plus a running consecutiveLosses streak counter maintained in
-  // onOpenContract's win/loss branch.
+  // the same dailyPnl the daily-limit pair already watches, plus a running
   //
   // Login 1 -> Login 2 has TWO independent trigger conditions, either or both
   // of which can be enabled:
@@ -2522,7 +2017,6 @@
   function checkDualLoginSwitch(){
     if(!state.dualMode) return;
     if(state.dualSwitchInFlight) return;
-    if(state.cyclePaused) return;      // waiting-timer countdown owns the pause right now — don't also switch mid-countdown
     if(state.haltReason) return;        // a hard daily loss/profit halt already stopped things — don't switch on top of that
 
     let hit = false;
@@ -2959,15 +2453,6 @@
     durationHint.textContent = val + " " + unitLabel + (val === 1 ? "" : "s");
   }
 
-  function updateCycleWaitHint(){
-    const h = Math.max(0, parseInt(cycleWaitHourInput.value, 10) || 0);
-    const m = Math.max(0, parseInt(cycleWaitMinInput.value, 10) || 0);
-    const parts = [];
-    if(h > 0) parts.push(h + " hour" + (h === 1 ? "" : "s"));
-    if(m > 0 || h === 0) parts.push(m + " minute" + (m === 1 ? "" : "s"));
-    cycleWaitHint.textContent = parts.join(" ");
-  }
-
   function placeTrade(dir, level, score){
     state.tradeInFlight = true; // lock immediately — cleared on failure below, or on settlement in onOpenContract
     updateMasterFlag();
@@ -3058,7 +2543,6 @@
           haltAutoTrade("Daily profit target reached (" + state.dailyPnl.toFixed(2) + " " + state.accountCurrency + ")");
         }
       }
-      checkWaitTimerCycle();
       checkDualLoginSwitch();
     }
   }
@@ -3136,33 +2620,13 @@
     state.haltReason = null;
     state.lastTradeTime = 0;
     state.openContracts = {};
-    state.lastTradeDir = 0;
     updateStats();
     updateMasterFlag();
-    updateAlternatorHint();
     tradeLog.innerHTML = '<div class="log-empty">No trades yet this session.</div>';
   }
 
-  function updateAlternatorHint(){
-    if(!state.alternatorMode){
-      alternatorHint.style.display = "none";
-      return;
-    }
-    alternatorHint.style.display = "";
-    if(state.lastTradeDir === 0){
-      alternatorNext.textContent = "either (no trade yet this session)";
-    } else {
-      alternatorNext.textContent = state.lastTradeDir > 0 ? "SELL" : "BUY";
-    }
-  }
-
   function updateMasterFlag(){
-    if(state.autoTrade && state.cyclePaused){
-      masterFlag.className = "master-flag on";
-      masterDot.className = "dot live";
-      masterText.textContent = "Auto-trading is PAUSED";
-      masterSub.textContent = "Cycle target reached — waiting on countdown before the next cycle resumes.";
-    } else if(state.autoTrade){
+    if(state.autoTrade){
       masterFlag.className = "master-flag on";
       masterDot.className = "dot live";
       masterText.textContent = "Auto-trading is ON";
@@ -3195,19 +2659,6 @@
         cooldown: parseInt(cooldownSelect.value, 10) || 0,
         lossLimit: parseFloat(lossLimitInput.value) || 0,
         profitTarget: parseFloat(profitTargetInput.value) || 0,
-        filters: { ...state.filters },
-        volRegimeLow: parseInt(volRegimeLowInput.value, 10) || 20,
-        volRegimeHigh: parseInt(volRegimeHighInput.value, 10) || 90,
-        volRegimeMode: state.volRegimeMode,
-        exhaustionZ: state.exhaustionZ,
-        volRegimeAbove: parseInt(volRegimeAboveInput.value, 10) || 80,
-        alternatorMode: state.alternatorMode,
-        reverseMode: state.reverseMode,
-        waitTimerMode: state.waitTimerMode,
-        cycleTarget: parseFloat(cycleTargetInput.value) || 0,
-        cycleWaitHour: parseInt(cycleWaitHourInput.value, 10) || 0,
-        cycleWaitMin: parseInt(cycleWaitMinInput.value, 10) || 0,
-        dailyCycleTarget: parseFloat(dailyCycleTargetInput.value) || 0,
         dualMode: state.dualMode,
         token2: token2Input.value,
         login1LossLimit: parseFloat(login1LossInput.value) || 0,
@@ -3273,58 +2724,6 @@
     if(data.lossLimit != null){ lossLimitInput.value = data.lossLimit; state.lossLimit = data.lossLimit; }
     if(data.profitTarget != null){ profitTargetInput.value = data.profitTarget; state.profitTarget = data.profitTarget; }
 
-    if(data.filters){
-      Object.keys(filterCheckboxes).forEach(key=>{
-        if(data.filters[key] != null){
-          state.filters[key] = !!data.filters[key];
-          filterCheckboxes[key].checked = state.filters[key];
-          filterCheckboxes[key].closest(".filter-item").classList.toggle("checked", state.filters[key]);
-        }
-      });
-    }
-
-    if(data.volRegimeLow != null){
-      state.volRegimeLow = data.volRegimeLow;
-      volRegimeLowInput.value = data.volRegimeLow;
-      volRegimeLowVal.textContent = data.volRegimeLow + "th";
-    }
-    if(data.volRegimeHigh != null){
-      state.volRegimeHigh = data.volRegimeHigh;
-      volRegimeHighInput.value = data.volRegimeHigh;
-      volRegimeHighVal.textContent = data.volRegimeHigh + "th";
-    }
-    if(data.volRegimeAbove != null){
-      state.volRegimeAbove = data.volRegimeAbove;
-      volRegimeAboveInput.value = data.volRegimeAbove;
-      volRegimeAboveVal.textContent = data.volRegimeAbove + "th";
-    }
-    if(data.volRegimeMode === "band" || data.volRegimeMode === "above"){
-      setVolRegimeMode(data.volRegimeMode);
-    }
-    if(data.exhaustionZ === 2 || data.exhaustionZ === 3 || data.exhaustionZ === 4){
-      setExhaustionZ(data.exhaustionZ);
-    }
-
-    if(data.alternatorMode != null){
-      state.alternatorMode = !!data.alternatorMode;
-      alternatorToggle.checked = state.alternatorMode;
-      updateAlternatorHint();
-    }
-
-    if(data.reverseMode != null){
-      state.reverseMode = !!data.reverseMode;
-      reverseToggle.checked = state.reverseMode;
-    }
-
-    if(data.cycleTarget != null){ cycleTargetInput.value = data.cycleTarget; state.cycleTarget = data.cycleTarget; }
-    if(data.cycleWaitHour != null){ cycleWaitHourInput.value = data.cycleWaitHour; state.cycleWaitHour = data.cycleWaitHour; }
-    if(data.cycleWaitMin != null){ cycleWaitMinInput.value = data.cycleWaitMin; state.cycleWaitMin = data.cycleWaitMin; }
-    if(data.dailyCycleTarget != null){ dailyCycleTargetInput.value = data.dailyCycleTarget; state.dailyCycleTarget = data.dailyCycleTarget; }
-    if(data.waitTimerMode != null){
-      state.waitTimerMode = !!data.waitTimerMode;
-      waitTimerToggle.checked = state.waitTimerMode;
-    }
-
     if(data.token2){ token2Input.value = data.token2; state.token2 = sanitizeToken(data.token2); updateToken2LenHint(); }
     if(data.login1LossLimit != null){ login1LossInput.value = data.login1LossLimit; state.login1LossLimit = data.login1LossLimit; }
     if(data.login1LossLimitEnabled != null){
@@ -3361,8 +2760,6 @@
     if(typeof data.vaultNextId === "number") state.vaultNextId = data.vaultNextId;
 
     updateDurationHint();
-    updateCycleWaitHint();
-    renderCycleStatus();
     renderDualStatus();
     renderVault();
   }
@@ -3433,22 +2830,6 @@
     }
   });
 
-  alternatorToggle.addEventListener("change", function(){
-    state.alternatorMode = this.checked;
-    // Turning it on mid-session starts the alternation from whatever the last
-    // placed trade was (if any) — it does NOT reset lastTradeDir, so if a BUY
-    // already went out earlier in the session, the very next auto-trade must
-    // still be a SELL. Turning it off simply stops enforcing the gate; the
-    // memory of the last direction is kept in case it's re-enabled later.
-    updateAlternatorHint();
-    savePersisted();
-  });
-
-  reverseToggle.addEventListener("change", function(){
-    state.reverseMode = this.checked;
-    savePersisted();
-  });
-
   strengthSeg.addEventListener("click", function(e){
     const btn = e.target.closest("button");
     if(!btn) return;
@@ -3458,64 +2839,6 @@
     updateMasterFlag();
     savePersisted();
   });
-
-  Object.keys(filterCheckboxes).forEach(key=>{
-    const cb = filterCheckboxes[key];
-    cb.addEventListener("change", function(){
-      state.filters[key] = this.checked;
-      this.closest(".filter-item").classList.toggle("checked", this.checked);
-      savePersisted();
-    });
-  });
-
-  volRegimeLowInput.addEventListener("input", function(){
-    let v = parseInt(this.value, 10) || 0;
-    if(v > state.volRegimeHigh){ v = state.volRegimeHigh; this.value = v; } // keep low <= high
-    state.volRegimeLow = v;
-    volRegimeLowVal.textContent = v + "th";
-  });
-  volRegimeLowInput.addEventListener("change", savePersisted);
-
-  volRegimeHighInput.addEventListener("input", function(){
-    let v = parseInt(this.value, 10) || 100;
-    if(v < state.volRegimeLow){ v = state.volRegimeLow; this.value = v; } // keep high >= low
-    state.volRegimeHigh = v;
-    volRegimeHighVal.textContent = v + "th";
-  });
-  volRegimeHighInput.addEventListener("change", savePersisted);
-
-  volRegimeAboveInput.addEventListener("input", function(){
-    const v = parseInt(this.value, 10) || 50;
-    state.volRegimeAbove = v;
-    volRegimeAboveVal.textContent = v + "th";
-  });
-  volRegimeAboveInput.addEventListener("change", savePersisted);
-
-  // Band / Above mode switch — mutually exclusive by design: only one of the
-  // two control groups is ever visible or applied at a time, so there's no
-  // way for the low/high band and the single "above" threshold to conflict.
-  function setVolRegimeMode(mode){
-    state.volRegimeMode = mode;
-    volModeBandBtn.classList.toggle("active", mode === "band");
-    volModeAboveBtn.classList.toggle("active", mode === "above");
-    volBandControls.style.display = mode === "band" ? "" : "none";
-    volAboveControls.style.display = mode === "above" ? "" : "none";
-  }
-  volModeBandBtn.addEventListener("click", function(){ setVolRegimeMode("band"); savePersisted(); });
-  volModeAboveBtn.addEventListener("click", function(){ setVolRegimeMode("above"); savePersisted(); });
-
-  // Extreme entry strictness switch — 2z (standard outlier threshold) or
-  // 4z (only very sharp, rarer spikes/drops). Mutually exclusive toggle,
-  // same pattern as the volatility regime Band/Above switch above.
-  function setExhaustionZ(z){
-    state.exhaustionZ = z;
-    exhaustionZ2Btn.classList.toggle("active", z === 2);
-    exhaustionZ3Btn.classList.toggle("active", z === 3);
-    exhaustionZ4Btn.classList.toggle("active", z === 4);
-  }
-  exhaustionZ2Btn.addEventListener("click", function(){ setExhaustionZ(2); savePersisted(); });
-  exhaustionZ3Btn.addEventListener("click", function(){ setExhaustionZ(3); savePersisted(); });
-  exhaustionZ4Btn.addEventListener("click", function(){ setExhaustionZ(4); savePersisted(); });
 
   stakeInput.addEventListener("change", function(){ state.stake = parseFloat(this.value)||1; savePersisted(); });
   durationValueInput.addEventListener("change", function(){
@@ -3532,30 +2855,6 @@
   cooldownSelect.addEventListener("change", function(){ state.cooldown = parseInt(this.value,10); savePersisted(); });
   lossLimitInput.addEventListener("change", function(){ state.lossLimit = parseFloat(this.value)||0; savePersisted(); });
   profitTargetInput.addEventListener("change", function(){ state.profitTarget = parseFloat(this.value)||0; savePersisted(); });
-
-  waitTimerToggle.addEventListener("change", function(){
-    state.waitTimerMode = this.checked;
-    if(!this.checked){
-      resetWaitTimerCycle();
-    } else {
-      renderCycleStatus();
-    }
-    savePersisted();
-  });
-  cycleTargetInput.addEventListener("change", function(){ state.cycleTarget = parseFloat(this.value)||0; renderCycleStatus(); savePersisted(); });
-  cycleWaitHourInput.addEventListener("change", function(){
-    state.cycleWaitHour = Math.max(0, parseInt(this.value,10) || 0);
-    cycleWaitHourInput.value = state.cycleWaitHour;
-    updateCycleWaitHint();
-    savePersisted();
-  });
-  cycleWaitMinInput.addEventListener("change", function(){
-    state.cycleWaitMin = Math.max(0, parseInt(this.value,10) || 0);
-    cycleWaitMinInput.value = state.cycleWaitMin;
-    updateCycleWaitHint();
-    savePersisted();
-  });
-  dailyCycleTargetInput.addEventListener("change", function(){ state.dailyCycleTarget = parseFloat(this.value)||0; renderCycleStatus(); savePersisted(); });
 
   tokenInput.addEventListener("change", savePersisted);
   // appIdInput is hard-coded/readonly now — no change listener needed.
@@ -3597,12 +2896,8 @@
   });
 
   /* ===================== INIT ===================== */
-  setVolRegimeMode("band"); // default; loadPersisted() below will override if a saved mode exists
-  setExhaustionZ(2); // default; loadPersisted() below will override if a saved value exists
   loadPersisted();
   updateDurationHint();
-  updateCycleWaitHint();
-  renderCycleStatus();
 
   // Dual-mode heartbeat runs on its own plain setInterval, deliberately NOT
   // gated behind the keepalive/socket-active check above — its whole job is
