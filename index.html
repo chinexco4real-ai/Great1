@@ -378,6 +378,24 @@
   }
   .mm-sig-row .rise{ color:var(--rise); font-weight:700; }
   .mm-sig-row .fall{ color:var(--fall); font-weight:700; }
+  .mm-level-row{
+    margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;
+    font-size:10px; letter-spacing:0.2px;
+  }
+  .mm-level-item{
+    display:inline-flex; align-items:center; gap:4px;
+    padding:3px 7px; border-radius:5px; border:1px solid var(--line-soft);
+    background:var(--panel); color:var(--ink);
+  }
+  .mm-level-item b{ color:var(--ink); font-weight:700; }
+  .mm-level-item .mm-level-val{ color:var(--ink); font-weight:700; }
+  /* The login this market is CURRENTLY trading on gets a bright accent
+     border + glowing dot, matching the same active-vs-idle convention used
+     by the reset/close target pills — text stays equally bright either
+     way, only the accent signals which login is live right now. */
+  .mm-level-item.live{ border-color:var(--rise-dim); }
+  .mm-level-item.live .mm-level-dot{ background:var(--rise); box-shadow:0 0 5px var(--rise); }
+  .mm-level-item .mm-level-dot{ width:5px; height:5px; border-radius:50%; background:var(--ink-faint); flex-shrink:0; }
   .mm-target-row{ margin-top:6px; display:flex; flex-wrap:wrap; gap:5px; }
   .mm-target-pill{
     font-size:9.5px; letter-spacing:0.2px; padding:3px 7px; border-radius:5px;
@@ -663,6 +681,42 @@
               </div>
             </div>
             <div class="field-hint" style="margin-top:-8px;">Both are universal values applied to every market in the scan, and each only ever applies while that market is on its own stated login — a market is never on both logins at once, so the two never conflict. <b>Reset target (Login 1):</b> the moment a market's own net P&amp;L reaches this amount while it's on Login 1, that market's stats snap back to 0 and it keeps trading. <b>Closing target (Login 2):</b> the moment a market's own net P&amp;L reaches this amount while it's on Login 2, that market closes out and is disabled — it stops trading and drops out of the scan, while every other market keeps running independently until it reaches its own target. Once every selected market has closed out, the scan stops itself. Set either to 0 to disable it.</div>
+
+            <div style="margin-top:12px; padding:12px; border-radius:8px; background:var(--panel-2); border:1px solid var(--line);">
+              <div class="toggle-row" style="padding:0;">
+                <div>
+                  <div class="toggle-label">Multi market level</div>
+                  <div class="toggle-sub">Off (default): every market in the scan uses the single "Minimum signal strength to trade" setting above, on both logins — the normal, general-mode behavior. On: choose a separate minimum signal strength for Login 1 and for Login 2. Whichever level you pick is exactly what that login trades on for every market in the scan — e.g. Low+ on Login 1 and Medium+ on Login 2 means every market only auto-trades Low-or-better signals while on Login 1, and only Medium-or-better signals while on Login 2.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="mmLevelToggle">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div id="mmLevelFieldWrap" style="display:none; margin-top:10px;">
+                <div class="row">
+                  <div class="field">
+                    <label>Login 1 minimum signal strength</label>
+                    <div class="seg" id="mmLevelSeg1">
+                      <button data-v="low">Low+</button>
+                      <button data-v="medium">Medium+</button>
+                      <button data-v="high">High only</button>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>Login 2 minimum signal strength</label>
+                    <div class="seg" id="mmLevelSeg2">
+                      <button data-v="low">Low+</button>
+                      <button data-v="medium">Medium+</button>
+                      <button data-v="high">High only</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="field-hint" style="margin-top:-4px;">Both must be set before auto-trading can be turned on while this is enabled. Pick a level for each login — the button turns bright and highlighted once selected. Neither is pre-selected by default.</div>
+                <div class="field-hint" id="mmLevelWarning" style="display:none; color:var(--amber); margin-top:6px;">⚠ Select a level for both Login 1 and Login 2 above before enabling auto-trading.</div>
+              </div>
+            </div>
+
             <div class="mm-markets" id="mmMarketsRow"></div>
             <div class="mm-conflict" id="mmConflictNote">Dual-login is active — each market in this scan switches to Login 2 independently, the moment its OWN condition 1 or condition 2 is met (not combined with any other market's count). Each market then runs its own Login 2 profit target and timer, and banks its own vault snapshot when that leg ends, all without affecting any other market. A market only waits for its own open trade to settle before switching — other markets are never held up by it.</div>
             <div class="mm-btnrow">
@@ -1117,6 +1171,7 @@
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
   const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection");
   const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
+  const mmLevelToggle = $("mmLevelToggle"), mmLevelFieldWrap = $("mmLevelFieldWrap"), mmLevelSeg1 = $("mmLevelSeg1"), mmLevelSeg2 = $("mmLevelSeg2"), mmLevelWarning = $("mmLevelWarning");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
   const mmTargetProfitInput = $("mmTargetProfitInput");
@@ -1140,6 +1195,9 @@
   const cfg = {
     appId: APP_ID,
     minStrength: "medium",
+    mmLevelToggleEnabled: false,
+    mmLevelLogin1: "", // "" = not yet selected; "low" | "medium" | "high" once chosen
+    mmLevelLogin2: "",
     stake: 1,
     durationValue: 5,
     durationUnit: "t",
@@ -1413,7 +1471,22 @@
     if(inst.haltReason) return;
     if(inst.tradeInFlight) return;
     if(inst.dualSwitchInFlight) return; // never open a new trade mid-switch for THIS market
-    if(strengthRank[sig.level] < strengthRank[cfg.minStrength]) return;
+    // Minimum signal strength gate. Normally this is the single global
+    // cfg.minStrength applied to every market/login the same way. But if
+    // "Multi market level" is enabled AND this instance is part of the
+    // scan, it instead uses a level chosen specifically for whichever
+    // login this market is currently on (cfg.mmLevelLogin1 / ...Login2).
+    // If that login's level hasn't been picked yet (empty string), this
+    // instance simply cannot trade until it is — mirrors the guard in
+    // autoToggle's change handler that stops auto-trade from being turned
+    // on at all while any level is still unset.
+    if(inst.inMultiMarketScan && cfg.mmLevelToggleEnabled){
+      const requiredLevel = inst.activeLogin === 2 ? cfg.mmLevelLogin2 : cfg.mmLevelLogin1;
+      if(!requiredLevel) return; // level not yet selected for this login — do not trade
+      if(strengthRank[sig.level] < strengthRank[requiredLevel]) return;
+    } else {
+      if(strengthRank[sig.level] < strengthRank[cfg.minStrength]) return;
+    }
     if(!inst.session || !inst.session.isOpen()) return;
 
     const now = Date.now();
@@ -2171,7 +2244,9 @@
       masterText.textContent = "Auto-trading is ON";
       masterSub.textContent = (primary && primary.tradeInFlight)
         ? "Trade in progress — waiting for it to settle before the next signal can fire."
-        : "Trading " + cfg.minStrength.toUpperCase() + "+ signals on " + scopeLabel + " · flat stake, no martingale.";
+        : (cfg.mmLevelToggleEnabled
+            ? "Trading " + (cfg.mmLevelLogin1||"?").toUpperCase() + "+ on Login 1 / " + (cfg.mmLevelLogin2||"?").toUpperCase() + "+ on Login 2 (multi-market level) on " + scopeLabel + " · flat stake, no martingale."
+            : "Trading " + cfg.minStrength.toUpperCase() + "+ signals on " + scopeLabel + " · flat stake, no martingale.");
     } else {
       masterFlag.className = "master-flag off";
       masterDot.className = "dot";
@@ -2449,6 +2524,7 @@
           '<div class="mm-stat"><div class="mm-stat-lbl">Net P/L</div><div class="mm-stat-val" id="mm-pnl-' + sym + '">0.00</div></div>' +
         '</div>' +
         '<div class="mm-sig-row" id="mm-sig-' + sym + '">Collecting ticks…</div>' +
+        '<div class="mm-level-row" id="mm-level-' + sym + '"></div>' +
         '<div class="mm-target-row" id="mm-target-' + sym + '"></div>' +
         '<div class="mm-dual-row" id="mm-dual-' + sym + '" style="display:none; margin-top:6px; padding-top:6px; border-top:1px solid var(--line-soft); font-size:10.5px; color:var(--ink); line-height:1.5;"></div>';
       mmCards.appendChild(card);
@@ -2526,6 +2602,11 @@
       }
     }
 
+    const levelRowEl = document.getElementById("mm-level-" + sym);
+    if(levelRowEl){
+      levelRowEl.innerHTML = levelRowForInstance(inst);
+    }
+
     // Per-market condition 1/2 counters and Login-2 target/timer — this is
     // the per-instance display spec asks for: "let the count display
     // individually on each market" / "let it also display individually".
@@ -2538,6 +2619,29 @@
         dualRowEl.innerHTML = dualStatusLineForInstance(inst);
       }
     }
+  }
+
+  // Builds the "Login 1: LOW · Login 2: MEDIUM" style row shown on every
+  // multi-market card, so it's plain at a glance exactly which signal
+  // strength each login is trading on for THIS market right now. Reflects
+  // reality either way:
+  //   - Multi market level ON  -> cfg.mmLevelLogin1 / cfg.mmLevelLogin2
+  //     (shows "not set" if a login's level hasn't been picked yet, since
+  //     that login genuinely cannot trade until it is — see
+  //     maybeAutoTradeInstance's matching guard)
+  //   - Multi market level OFF -> both logins fall back to the single
+  //     general-mode cfg.minStrength, exactly like every other market rule
+  //     when this toggle is disabled.
+  // Whichever login inst.activeLogin currently is gets the bright "live"
+  // accent (glowing dot + tinted border); the other stays plain — text
+  // itself is always fully legible on both, never dimmed.
+  function levelRowForInstance(inst){
+    const lvl1 = cfg.mmLevelToggleEnabled ? (cfg.mmLevelLogin1 || "") : cfg.minStrength;
+    const lvl2 = cfg.mmLevelToggleEnabled ? (cfg.mmLevelLogin2 || "") : cfg.minStrength;
+    const fmt = function(lvl){ return lvl ? lvl.toUpperCase() + "+" : "not set"; };
+    const item1 = '<span class="mm-level-item' + (inst.activeLogin === 1 ? " live" : "") + '"><span class="mm-level-dot"></span><b>Login 1</b> <span class="mm-level-val">' + fmt(lvl1) + '</span></span>';
+    const item2 = '<span class="mm-level-item' + (inst.activeLogin === 2 ? " live" : "") + '"><span class="mm-level-dot"></span><b>Login 2</b> <span class="mm-level-val">' + fmt(lvl2) + '</span></span>';
+    return item1 + item2;
   }
 
   // Builds the two target-tracking pills shown on every multi-market card:
@@ -2988,6 +3092,9 @@
         environment2: env2Select.value,
         symbol: primary ? primary.symbol : symbolSelect.value,
         minStrength: cfg.minStrength,
+        mmLevelToggleEnabled: cfg.mmLevelToggleEnabled,
+        mmLevelLogin1: cfg.mmLevelLogin1,
+        mmLevelLogin2: cfg.mmLevelLogin2,
         stake: parseFloat(stakeInput.value) || 1,
         durationValue: parseInt(durationValueInput.value, 10) || 1,
         durationUnit: durationUnitSelect.value,
@@ -3051,6 +3158,20 @@
       cfg.minStrength = data.minStrength;
       [...strengthSeg.children].forEach(b=>{ b.classList.toggle("active", b.dataset.v === data.minStrength); });
     }
+    if(data.mmLevelToggleEnabled != null){
+      cfg.mmLevelToggleEnabled = !!data.mmLevelToggleEnabled;
+      mmLevelToggle.checked = cfg.mmLevelToggleEnabled;
+      mmLevelFieldWrap.style.display = cfg.mmLevelToggleEnabled ? "" : "none";
+    }
+    if(data.mmLevelLogin1){
+      cfg.mmLevelLogin1 = data.mmLevelLogin1;
+      [...mmLevelSeg1.children].forEach(b=>{ b.classList.toggle("active", b.dataset.v === data.mmLevelLogin1); });
+    }
+    if(data.mmLevelLogin2){
+      cfg.mmLevelLogin2 = data.mmLevelLogin2;
+      [...mmLevelSeg2.children].forEach(b=>{ b.classList.toggle("active", b.dataset.v === data.mmLevelLogin2); });
+    }
+    renderMmLevelWarning();
     if(data.stake != null){ stakeInput.value = data.stake; cfg.stake = data.stake; }
     if(data.durationValue != null){ durationValueInput.value = data.durationValue; cfg.durationValue = data.durationValue; }
     if(data.durationUnit){ durationUnitSelect.value = data.durationUnit; cfg.durationUnit = data.durationUnit; }
@@ -3285,7 +3406,34 @@
     savePersisted();
   });
 
+  // Returns true if it's safe to enable auto-trade given the current
+  // Multi market level setup: either the toggle is off (general mode,
+  // always fine), or it's on and BOTH Login 1 and Login 2 levels have
+  // been explicitly picked.
+  function mmLevelReadyForAutoTrade(){
+    if(!cfg.mmLevelToggleEnabled) return true;
+    return !!cfg.mmLevelLogin1 && !!cfg.mmLevelLogin2;
+  }
+
+  function renderMmLevelWarning(){
+    if(!mmLevelWarning) return;
+    const show = cfg.mmLevelToggleEnabled && (!cfg.mmLevelLogin1 || !cfg.mmLevelLogin2);
+    mmLevelWarning.style.display = show ? "" : "none";
+  }
+
   autoToggle.addEventListener("change", function(){
+    if(this.checked && !mmLevelReadyForAutoTrade()){
+      // Block turning auto-trade on: Multi market level is enabled but at
+      // least one login still has no level selected. Revert the checkbox
+      // and prompt instead of silently allowing a half-configured scan to
+      // start trading with no strength filter on one of its logins.
+      this.checked = false;
+      cfg.autoTrade = false;
+      renderMmLevelWarning();
+      mmLogNote("Auto-trade blocked — Multi market level is enabled but Login 1 and/or Login 2 has no signal strength selected yet. Pick a level for both in the Multi market panel first.");
+      updateMasterFlag();
+      return;
+    }
     cfg.autoTrade = this.checked;
     if(this.checked){
       allActiveInstances().forEach(function(inst){ inst.haltReason = null; });
@@ -3302,6 +3450,40 @@
     }
   });
 
+  mmLevelToggle.addEventListener("change", function(){
+    cfg.mmLevelToggleEnabled = this.checked;
+    mmLevelFieldWrap.style.display = this.checked ? "" : "none";
+    renderMmLevelWarning();
+    if(!mmLevelReadyForAutoTrade() && cfg.autoTrade){
+      // Was already auto-trading in general mode and the user just flipped
+      // this on without picking levels yet — pause it the same way, rather
+      // than letting it keep trading unfiltered on whichever login has no
+      // level chosen.
+      autoToggle.checked = false;
+      cfg.autoTrade = false;
+      mmLogNote("Auto-trade paused — Multi market level was enabled but Login 1 and/or Login 2 has no signal strength selected yet. Pick a level for both, then re-enable auto-trade.");
+      updateMasterFlag();
+    }
+    if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); });
+    savePersisted();
+  });
+
+  function mmLevelSegClick(seg, cfgKey){
+    seg.addEventListener("click", function(e){
+      const btn = e.target.closest("button");
+      if(!btn) return;
+      [...seg.children].forEach(b=>b.classList.remove("active","fall-active"));
+      btn.classList.add("active");
+      cfg[cfgKey] = btn.dataset.v;
+      renderMmLevelWarning();
+      updateMasterFlag();
+      if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); });
+      savePersisted();
+    });
+  }
+  mmLevelSegClick(mmLevelSeg1, "mmLevelLogin1");
+  mmLevelSegClick(mmLevelSeg2, "mmLevelLogin2");
+
   strengthSeg.addEventListener("click", function(e){
     const btn = e.target.closest("button");
     if(!btn) return;
@@ -3309,6 +3491,7 @@
     btn.classList.add("active");
     cfg.minStrength = btn.dataset.v;
     updateMasterFlag();
+    if(mmActive && !cfg.mmLevelToggleEnabled) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); });
     savePersisted();
   });
 
