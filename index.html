@@ -779,6 +779,17 @@
           <div class="panel-head">
             <div class="panel-title">Trade log</div>
           </div>
+          <div class="toggle-row" style="padding:0 0 12px 0;">
+            <div>
+              <div class="toggle-label">Auto-clear log</div>
+              <div class="toggle-sub">Every 10 minutes, checks this log's total entries — closed &amp; settled trades (won/lost — never an open position) plus system-log entries, counted together as one number. The moment that combined total reaches 100, the entire log is cleared. If it's still under 100, it waits another 10 minutes and checks again.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="autoClearLogToggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="field-hint" id="autoClearLogStatus" style="margin-top:-8px; margin-bottom:10px; display:none;"></div>
           <div class="log" id="tradeLog">
             <div class="log-empty">No trades yet this session.</div>
           </div>
@@ -1113,6 +1124,7 @@
   const statTotal = $("statTotal"), statWon = $("statWon"), statLost = $("statLost"), statPnl = $("statPnl");
   const resetSessionBtn = $("resetSessionBtn");
   const tradeLog = $("tradeLog");
+  const autoClearLogToggle = $("autoClearLogToggle"), autoClearLogStatus = $("autoClearLogStatus");
   const masterFlag = $("masterFlag"), masterDot = $("masterDot"), masterText = $("masterText"), masterSub = $("masterSub");
   const mmEnabledToggle = $("mmEnabledToggle"), mmBadge = $("mmBadge"), mmMarketsRow = $("mmMarketsRow");
   const mmConflictNote = $("mmConflictNote"), mmStartBtn = $("mmStartBtn"), mmStopBtn = $("mmStopBtn"), mmCards = $("mmCards");
@@ -2669,12 +2681,13 @@
     const statusEl = row.querySelector(".log-status");
     statusEl.className = "log-status " + statusClass;
     statusEl.textContent = statusClass.toUpperCase();
+    if(statusClass === "won" || statusClass === "lost") checkAutoClearLog();
   }
 
   function logSystemNote(text){
     if(tradeLog.querySelector(".log-empty")) tradeLog.innerHTML = "";
     const row = document.createElement("div");
-    row.className = "log-row";
+    row.className = "log-row log-row-sys";
     const time = new Date().toLocaleTimeString();
     row.innerHTML =
       '<div class="log-time">'+time+'</div>' +
@@ -2682,7 +2695,91 @@
       '<div class="log-desc">'+text+'</div>' +
       '<div class="log-status"></div>';
     tradeLog.insertBefore(row, tradeLog.firstChild);
+    checkAutoClearLog();
   }
+
+  /* ===================== AUTO-CLEAR LOG ===================== =========
+     Toggle near the Trade log panel. While ON: every 10 minutes, counts
+     every row in #tradeLog that is EITHER a closed & settled trade
+     (status class "won" or "lost" — an "open" row is a live, unsettled
+     position and is NEVER counted or touched) OR a system log entry
+     (.log-row-sys, added by logSystemNote — connection notices, resets,
+     switches, closes, etc), added together as ONE combined total. The
+     moment that combined total reaches 100, the entire log is wiped. If
+     it's still under 100 at the 10-minute mark, nothing happens and it
+     simply waits for the next 10-minute check — it does NOT reset the
+     wait early just because new rows came in, so it's a steady "check
+     every 10 minutes, clear if ready" cycle, not a debounce.
+     Rows are counted directly from the live DOM (not a separate running
+     tally), so this is accurate no matter when the toggle was turned on
+     or how the log was populated. */
+  const AUTO_CLEAR_LOG_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+  const AUTO_CLEAR_LOG_THRESHOLD = 100;
+  let autoClearLogTimer = null;
+
+  function countLogRows(){
+    let total = 0;
+    tradeLog.querySelectorAll(".log-row").forEach(function(row){
+      if(row.classList.contains("log-row-sys")){ total++; return; }
+      const statusEl = row.querySelector(".log-status");
+      const cls = statusEl ? statusEl.className : "";
+      // Only a settled outcome counts — "open" (still-live position) is
+      // deliberately excluded so a trade that hasn't closed yet can never
+      // be swept away by this feature.
+      if(/\bwon\b/.test(cls) || /\blost\b/.test(cls)) total++;
+    });
+    return total;
+  }
+
+  function renderAutoClearLogStatus(){
+    if(!autoClearLogStatus) return;
+    if(!autoClearLogToggle.checked){ autoClearLogStatus.style.display = "none"; return; }
+    const total = countLogRows();
+    autoClearLogStatus.style.display = "";
+    autoClearLogStatus.textContent = "Watching — " + total + "/" + AUTO_CLEAR_LOG_THRESHOLD +
+      " entries (closed trades + system entries combined). Next check in up to 10 min; clears the log the moment it reaches " + AUTO_CLEAR_LOG_THRESHOLD + ".";
+  }
+
+  function checkAutoClearLog(){
+    // Called opportunistically whenever a row is added, purely to keep the
+    // status line's live count fresh-looking — the actual clear decision
+    // only ever happens on the 10-minute timer tick below, never here.
+    renderAutoClearLogStatus();
+  }
+
+  function runAutoClearLogCycle(){
+    if(!autoClearLogToggle.checked) return;
+    const total = countLogRows();
+    if(total >= AUTO_CLEAR_LOG_THRESHOLD){
+      tradeLog.innerHTML = '<div class="log-empty">No trades yet this session.</div>';
+      // Announce the clear itself as a fresh system note AFTER wiping, so
+      // the log doesn't start right back at "1" toward the next 100
+      // purely because of its own housekeeping message.
+      logSystemNote("Auto-clear log: reached " + AUTO_CLEAR_LOG_THRESHOLD + " combined entries (closed trades + system entries) — log cleared automatically.");
+    }
+    renderAutoClearLogStatus();
+  }
+
+  function startAutoClearLog(){
+    stopAutoClearLog();
+    renderAutoClearLogStatus();
+    autoClearLogTimer = setInterval(runAutoClearLogCycle, AUTO_CLEAR_LOG_INTERVAL_MS);
+  }
+
+  function stopAutoClearLog(){
+    if(autoClearLogTimer){ clearInterval(autoClearLogTimer); autoClearLogTimer = null; }
+    if(autoClearLogStatus) autoClearLogStatus.style.display = "none";
+  }
+
+  autoClearLogToggle.addEventListener("change", function(){
+    savePersisted();
+    if(this.checked){
+      logSystemNote("Auto-clear log enabled — will check every 10 minutes and clear once there are at least " + AUTO_CLEAR_LOG_THRESHOLD + " combined entries (closed trades + system entries).");
+      startAutoClearLog();
+    } else {
+      stopAutoClearLog();
+    }
+  });
 
   function sanitizeToken(raw){
     return (raw || "").replace(/[\s\u200B-\u200D\uFEFF]/g, "");
@@ -2912,7 +3009,8 @@
         mmEnabled: mmEnabled,
         mmSelectedSyms: mmSelectedSyms,
         mmTargetProfit: parseFloat(mmTargetProfitInput.value) || 0,
-        mmResetTargetProfit: parseFloat(mmResetTargetProfitInput.value) || 0
+        mmResetTargetProfit: parseFloat(mmResetTargetProfitInput.value) || 0,
+        autoClearLogEnabled: autoClearLogToggle.checked
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }catch(e){ /* storage unavailable — fail silently */ }
@@ -2961,6 +3059,10 @@
     if(data.profitTarget != null){ profitTargetInput.value = data.profitTarget; cfg.profitTarget = data.profitTarget; }
     if(data.mmTargetProfit != null){ mmTargetProfitInput.value = data.mmTargetProfit; cfg.mmTargetProfit = data.mmTargetProfit; }
     if(data.mmResetTargetProfit != null){ mmResetTargetProfitInput.value = data.mmResetTargetProfit; cfg.mmResetTargetProfit = data.mmResetTargetProfit; }
+    if(data.autoClearLogEnabled != null){
+      autoClearLogToggle.checked = !!data.autoClearLogEnabled;
+      if(autoClearLogToggle.checked) startAutoClearLog(); else stopAutoClearLog();
+    }
 
     if(data.token2){ token2Input.value = data.token2; cfg.token2 = sanitizeToken(data.token2); updateToken2LenHint(); }
     if(data.login1LossLimit != null){ login1LossInput.value = data.login1LossLimit; cfg.login1LossLimit = data.login1LossLimit; }
