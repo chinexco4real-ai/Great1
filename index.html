@@ -698,17 +698,15 @@
                   <div class="field">
                     <label>Login 1 minimum signal strength</label>
                     <div class="seg" id="mmLevelSeg1">
-                      <button data-v="low">Low+</button>
-                      <button data-v="medium">Medium+</button>
-                      <button data-v="high">High only</button>
+                      <button data-v="low">Low</button>
+                      <button data-v="medium">Medium</button>
                     </div>
                   </div>
                   <div class="field">
                     <label>Login 2 minimum signal strength</label>
                     <div class="seg" id="mmLevelSeg2">
-                      <button data-v="low">Low+</button>
-                      <button data-v="medium">Medium+</button>
-                      <button data-v="high">High only</button>
+                      <button data-v="low">Low</button>
+                      <button data-v="medium">Medium</button>
                     </div>
                   </div>
                 </div>
@@ -836,7 +834,7 @@
           <div class="toggle-row" style="padding:0 0 12px 0;">
             <div>
               <div class="toggle-label">Auto-clear log</div>
-              <div class="toggle-sub">Every 10 minutes, checks this log's total entries — closed &amp; settled trades (won/lost — never an open position) plus system-log entries, counted together as one number. The moment that combined total reaches 100, the entire log is cleared. If it's still under 100, it waits another 10 minutes and checks again.</div>
+              <div class="toggle-sub">Every 10 minutes, checks this log's total entries — closed &amp; settled trades (won/lost — never an open position) plus system-log entries, counted together as one number. The moment that combined total reaches 50, the entire log is cleared. If it's still under 50, it waits another 10 minutes and checks again.</div>
             </div>
             <label class="switch">
               <input type="checkbox" id="autoClearLogToggle">
@@ -2809,16 +2807,17 @@
      position and is NEVER counted or touched) OR a system log entry
      (.log-row-sys, added by logSystemNote — connection notices, resets,
      switches, closes, etc), added together as ONE combined total. The
-     moment that combined total reaches 100, the entire log is wiped. If
-     it's still under 100 at the 10-minute mark, nothing happens and it
-     simply waits for the next 10-minute check — it does NOT reset the
-     wait early just because new rows came in, so it's a steady "check
-     every 10 minutes, clear if ready" cycle, not a debounce.
+     moment that combined total reaches AUTO_CLEAR_LOG_THRESHOLD (50), the
+     entire log is wiped. If it's still under that at the 10-minute mark,
+     nothing happens and it simply waits for the next 10-minute check — it
+     does NOT reset the wait early just because new rows came in, so it's
+     a steady "check every 10 minutes, clear if ready" cycle, not a
+     debounce.
      Rows are counted directly from the live DOM (not a separate running
      tally), so this is accurate no matter when the toggle was turned on
      or how the log was populated. */
   const AUTO_CLEAR_LOG_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
-  const AUTO_CLEAR_LOG_THRESHOLD = 100;
+  const AUTO_CLEAR_LOG_THRESHOLD = 50;
   let autoClearLogTimer = null;
 
   function countLogRows(){
@@ -3163,11 +3162,11 @@
       mmLevelToggle.checked = cfg.mmLevelToggleEnabled;
       mmLevelFieldWrap.style.display = cfg.mmLevelToggleEnabled ? "" : "none";
     }
-    if(data.mmLevelLogin1){
+    if(data.mmLevelLogin1 && data.mmLevelLogin1 !== "high"){
       cfg.mmLevelLogin1 = data.mmLevelLogin1;
       [...mmLevelSeg1.children].forEach(b=>{ b.classList.toggle("active", b.dataset.v === data.mmLevelLogin1); });
     }
-    if(data.mmLevelLogin2){
+    if(data.mmLevelLogin2 && data.mmLevelLogin2 !== "high"){
       cfg.mmLevelLogin2 = data.mmLevelLogin2;
       [...mmLevelSeg2.children].forEach(b=>{ b.classList.toggle("active", b.dataset.v === data.mmLevelLogin2); });
     }
