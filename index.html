@@ -651,7 +651,7 @@
             </label>
           </div>
           <div id="mmBody">
-            <div class="field-hint">Select two or more markets to scan simultaneously. Auto-trading, stake, duration, strength and cooldown settings above are shared rules applied to all selected markets. The <b>Daily loss limit</b> and <b>Daily profit target</b> fields above apply to the primary "Market" panel only — multi-market instances use the two dedicated targets below instead, so the two systems never compete over the same market. If dual-login auto-switch is also on, each market independently tracks its own condition 1 / condition 2 counters and switches to Login 2 on its own — see the note below.</div>
+            <div class="field-hint">Select one or more markets to scan. Auto-trading, stake, duration, strength and cooldown settings above are shared rules applied to all selected markets. The <b>Daily loss limit</b> and <b>Daily profit target</b> fields above apply to the primary "Market" panel only — multi-market instances use the two dedicated targets below instead, so the two systems never compete over the same market. If dual-login auto-switch is also on, each market independently tracks its own condition 1 / condition 2 counters and switches to Login 2 on its own — see the note below.</div>
             <div class="row" style="margin-top:10px;">
               <div class="field">
                 <label>Reset target profit per market (USD) <b style="font-weight:400; color:var(--ink-faint);">— Login 1 only</b></label>
@@ -2331,7 +2331,7 @@
   function mmUpdateStartBtn(){
     mmConflictNote.classList.toggle("show", cfg.dualMode);
     const anySessionReady = (session1.isOpen() && session1.authorized) || (session2.isOpen() && session2.authorized);
-    const canStart = mmEnabled && mmSelectedSyms.length >= 2 && !mmActive && anySessionReady;
+    const canStart = mmEnabled && mmSelectedSyms.length >= 1 && !mmActive && anySessionReady;
     mmStartBtn.disabled = !canStart;
   }
 
@@ -2354,8 +2354,8 @@
 
   function startMultiMarket(){
     if(mmActive) return;
-    if(mmSelectedSyms.length < 2){
-      mmLogNote("Select at least 2 markets for multi-market mode.");
+    if(mmSelectedSyms.length < 1){
+      mmLogNote("Select at least 1 market for multi-market mode.");
       return;
     }
     // Hard-sync from the DOM right before starting — belt-and-braces so a
