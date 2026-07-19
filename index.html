@@ -374,20 +374,28 @@
   .mm-stat-val.pos{ color:var(--rise); } .mm-stat-val.neg{ color:var(--fall); }
   .mm-sig-row{
     margin-top:8px; padding:6px 8px; border-radius:6px; background:var(--panel);
-    border:1px solid var(--line-soft); font-size:10.5px; color:var(--ink-dim);
+    border:1px solid var(--line-soft); font-size:10.5px; color:var(--ink);
   }
   .mm-sig-row .rise{ color:var(--rise); font-weight:700; }
   .mm-sig-row .fall{ color:var(--fall); font-weight:700; }
   .mm-target-row{ margin-top:6px; display:flex; flex-wrap:wrap; gap:5px; }
   .mm-target-pill{
     font-size:9.5px; letter-spacing:0.2px; padding:3px 7px; border-radius:5px;
-    border:1px solid var(--line); background:var(--panel); color:var(--ink-faint);
+    border:1px solid var(--line-soft); background:var(--panel); color:var(--ink-faint);
     display:inline-flex; align-items:center; gap:4px; white-space:nowrap;
   }
   .mm-target-pill .dot{ width:5px; height:5px; border-radius:50%; background:var(--ink-faint); flex-shrink:0; }
-  .mm-target-pill.tracking{ color:var(--ink-dim); border-color:var(--line); }
+  /* All three "live" pill states below (tracking / idle-armed / hit) keep the
+     same bright, fully-legible text (var(--ink)) — the only thing that ever
+     changes between them is the little dot's color/glow (grey = idle and
+     waiting its turn, amber pulse = actively counting toward target,
+     green glow = target just hit) plus a faint border tint for a quick
+     at-a-glance cue. Nothing here should ever look "greyed out" or hard to
+     read — only the "off" (target disabled) pill stays muted, since that
+     one genuinely isn't tracking anything. */
+  .mm-target-pill.tracking{ color:var(--ink); border-color:var(--line); }
   .mm-target-pill.tracking .dot{ background:var(--amber); box-shadow:0 0 5px var(--amber); animation:pulse 2s infinite; }
-  .mm-target-pill.idle-login{ color:var(--ink-faint); border-color:var(--line-soft); opacity:0.55; }
+  .mm-target-pill.idle-login{ color:var(--ink); border-color:var(--line); }
   .mm-target-pill.idle-login .dot{ background:var(--ink-faint); }
   .mm-target-pill.hit{ color:var(--rise); border-color:var(--rise-dim); background:rgba(61,220,151,0.06); }
   .mm-target-pill.hit .dot{ background:var(--rise); box-shadow:0 0 5px var(--rise); }
@@ -2430,7 +2438,7 @@
         '</div>' +
         '<div class="mm-sig-row" id="mm-sig-' + sym + '">Collecting ticks…</div>' +
         '<div class="mm-target-row" id="mm-target-' + sym + '"></div>' +
-        '<div class="mm-dual-row" id="mm-dual-' + sym + '" style="display:none; margin-top:6px; padding-top:6px; border-top:1px solid var(--line-soft); font-size:10.5px; color:var(--ink-dim); line-height:1.5;"></div>';
+        '<div class="mm-dual-row" id="mm-dual-' + sym + '" style="display:none; margin-top:6px; padding-top:6px; border-top:1px solid var(--line-soft); font-size:10.5px; color:var(--ink); line-height:1.5;"></div>';
       mmCards.appendChild(card);
       if(inst) mmUpdateCard(sym);
     });
