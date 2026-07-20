@@ -723,6 +723,17 @@
             </label>
           </div>
 
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Reverse mode</div>
+              <div class="toggle-sub">Flips every trade to the opposite direction right before it's placed — a Rise signal executes as Fall (PUT), and a Fall signal executes as Rise (CALL). The signal panel keeps showing the real detected direction; only the trade that's actually sent, logged, and settled is reversed.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="reverseModeToggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+
           <div class="field">
             <label>Minimum signal strength to trade</label>
             <div class="seg" id="strengthSeg">
@@ -1117,6 +1128,7 @@
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
   const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection");
   const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
+  const reverseModeToggle = $("reverseModeToggle");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
   const mmTargetProfitInput = $("mmTargetProfitInput");
@@ -1148,6 +1160,7 @@
     lossLimit: 20,
     profitTarget: 0,
     autoTrade: false,
+    reverseMode: false,
 
     dualMode: false,
     token2: "",
@@ -1437,7 +1450,11 @@
     }
 
     inst.lastTradeTime = now;
-    placeTradeForInstance(inst, sig.dir, sig.level, sig.score);
+    // Reverse mode flips only the direction that actually gets traded —
+    // the signal itself (level/score, and everything the UI shows) is
+    // untouched, so this is the single point where the flip happens.
+    const execDir = cfg.reverseMode ? -sig.dir : sig.dir;
+    placeTradeForInstance(inst, execDir, sig.level, sig.score);
   }
 
   function haltInstance(inst, reason){
@@ -3010,7 +3027,8 @@
         mmSelectedSyms: mmSelectedSyms,
         mmTargetProfit: parseFloat(mmTargetProfitInput.value) || 0,
         mmResetTargetProfit: parseFloat(mmResetTargetProfitInput.value) || 0,
-        autoClearLogEnabled: autoClearLogToggle.checked
+        autoClearLogEnabled: autoClearLogToggle.checked,
+        reverseMode: cfg.reverseMode
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }catch(e){ /* storage unavailable — fail silently */ }
@@ -3062,6 +3080,10 @@
     if(data.autoClearLogEnabled != null){
       autoClearLogToggle.checked = !!data.autoClearLogEnabled;
       if(autoClearLogToggle.checked) startAutoClearLog(); else stopAutoClearLog();
+    }
+    if(data.reverseMode != null){
+      cfg.reverseMode = !!data.reverseMode;
+      reverseModeToggle.checked = cfg.reverseMode;
     }
 
     if(data.token2){ token2Input.value = data.token2; cfg.token2 = sanitizeToken(data.token2); updateToken2LenHint(); }
@@ -3282,6 +3304,12 @@
 
   symbolSelect.addEventListener("change", function(){
     switchPrimarySymbol(this.value);
+    savePersisted();
+  });
+
+  reverseModeToggle.addEventListener("change", function(){
+    cfg.reverseMode = this.checked;
+    logSystemNote("Reverse mode " + (this.checked ? "enabled — trades will be flipped to the opposite direction before execution." : "disabled — trades will follow the raw signal direction again."));
     savePersisted();
   });
 
