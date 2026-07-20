@@ -2479,10 +2479,30 @@
       const inst = marketInstances[sym];
       if(!inst) return;
       if(inst.isPrimary){
-        // Shared primary/scan instance — survives the scan stopping (it's
-        // still the single "Market" panel instance), but is no longer
-        // part of a scan, so it should stop qualifying for scan-only rules.
+        // Shared primary/scan instance (this symbol is BOTH the single
+        // "Market" panel instance AND part of the scan — e.g. Step 100
+        // selected both as primary and in the multi-market grid). It
+        // survives the scan stopping since it's still the primary
+        // instance, but everything numeric on it right now reflects its
+        // time IN the scan (dailyPnl, win/loss counts, activeLogin,
+        // mmLogin2AccumPnl, mmTargetHit, reset count, etc). Leaving those
+        // in place after the scan stops is exactly what looked like "not
+        // properly resetting" — a fresh single-market session with this
+        // symbol should start from zero, the same clean slate a pure
+        // multi-market-only instance gets by simply being deleted below.
+        stopLogin2TimerForInstance(inst);
         inst.inMultiMarketScan = false;
+        resetInstanceSession(inst, true); // true = also clear mmLogin2AccumPnl
+        inst.mmTargetHit = false;
+        inst.mmResetCount = 0;
+        inst.mmLastResetAt = 0;
+        inst.activeLogin = 1;
+        inst.dualSwitchInFlight = false;
+        inst.dualSwitchInFlightSince = 0;
+        inst.dualSwitchPendingLabel = null;
+        inst.dualSwitchPendingSince = 0;
+        inst.login2TimerEndsAt = 0;
+        updateStats();
         return;
       }
       stopLogin2TimerForInstance(inst);
