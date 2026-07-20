@@ -638,6 +638,10 @@
               <div class="factor-name">Rejection wick</div>
               <div class="factor-val neu" id="fRejection">none</div>
             </div>
+            <div class="factor">
+              <div class="factor-name">Breakout</div>
+              <div class="factor-val neu" id="fBreakout">—</div>
+            </div>
           </div>
         </div>
 
@@ -730,6 +734,17 @@
             </div>
             <label class="switch">
               <input type="checkbox" id="reverseModeToggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Breakout filter</div>
+              <div class="toggle-sub">Only trades on a confirmed breakout — price must clear a recent consolidation range and follow through a further tick in the same direction. No confirmed breakout matching the signal's direction means no trade, no matter how strong the signal is.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="breakoutFilterToggle">
               <span class="slider"></span>
             </label>
           </div>
@@ -1126,9 +1141,10 @@
   const priceMain = $("priceMain"), priceDelta = $("priceDelta"), priceMeta = $("priceMeta");
   const tapeEl = $("tape");
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
-  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection");
+  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection"), fBreakout = $("fBreakout");
   const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
   const reverseModeToggle = $("reverseModeToggle");
+  const breakoutFilterToggle = $("breakoutFilterToggle");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
   const mmTargetProfitInput = $("mmTargetProfitInput");
@@ -1161,6 +1177,7 @@
     profitTarget: 0,
     autoTrade: false,
     reverseMode: false,
+    breakoutFilter: false,
 
     dualMode: false,
     token2: "",
@@ -1427,6 +1444,14 @@
     if(inst.tradeInFlight) return;
     if(inst.dualSwitchInFlight) return; // never open a new trade mid-switch for THIS market
     if(strengthRank[sig.level] < strengthRank[cfg.minStrength]) return;
+    // Breakout filter: when enabled, only trade the instant a breakout is
+    // confirmed in the SAME direction as the signal about to be traded.
+    // No confirmed breakout (or a breakout the other way) = no trade,
+    // full stop, regardless of how strong the underlying signal is.
+    if(cfg.breakoutFilter){
+      const bo = sig.breakout;
+      if(!bo || !bo.confirmed || bo.dir !== sig.dir) return;
+    }
     if(!inst.session || !inst.session.isOpen()) return;
 
     const now = Date.now();
@@ -1929,6 +1954,7 @@
     const structureDir = structure.dir;
 
     const rejection = detectRejection(prices);
+    const breakout = detectBreakout(prices);
 
     const votes = [ [runDir, momentumScore*1.0], [velocityDir, velocityScore*0.9], [structureDir, structureScore*1.1] ];
     let upWeight = 0, downWeight = 0;
@@ -1959,7 +1985,7 @@
 
     return {
       ready:true, level, levelLabel, dir: compositeDir, score: compositeScore,
-      runLen, runDir, velocity, velocityScore, structure, rejection
+      runLen, runDir, velocity, velocityScore, structure, rejection, breakout
     };
   }
 
@@ -2018,6 +2044,50 @@
     return { detected:false, dir:0, label:"none" };
   }
 
+  // Breakout confirmation: looks for a prior consolidation range, then
+  // requires price to have (a) closed clearly outside that range and
+  // (b) followed through with a second tick beyond the break, in the
+  // same direction — a single spike through the range edge that
+  // immediately snaps back is NOT a confirmed breakout. This is
+  // intentionally its own independent read (not reusing the momentum/
+  // structure/rejection factors) so it can act as a hard gate rather
+  // than another vote in the composite score.
+  function detectBreakout(prices){
+    const n = prices.length;
+    if(n < 14) return { confirmed:false, dir:0, label:"insufficient data" };
+
+    // Consolidation range = the window BEFORE the most recent 3 ticks,
+    // so the breakout itself is never counted as part of its own range.
+    const rangeSlice = prices.slice(n-14, n-3);
+    const rangeHigh = Math.max(...rangeSlice);
+    const rangeLow = Math.min(...rangeSlice);
+    const rangeSize = (rangeHigh - rangeLow) || 0.0000001;
+
+    // A tight-enough consolidation is required — if the "range" is
+    // already trending hard, there's nothing to break out of.
+    const avgStep = avgAbsoluteStep(rangeSlice);
+    if(avgStep > 0 && rangeSize > avgStep * 10){
+      return { confirmed:false, dir:0, label:"no clear range" };
+    }
+
+    const breakTick = prices[n-2];   // the candidate breakout tick
+    const confirmTick = prices[n-1]; // the follow-through tick
+
+    // Require the break to clear the range by a meaningful margin (not
+    // just a single pip over the edge), and the very next tick to
+    // continue in that same direction beyond the break tick itself —
+    // that follow-through is the "confirmation".
+    const buffer = rangeSize * 0.15;
+
+    if(breakTick > rangeHigh + buffer && confirmTick > breakTick){
+      return { confirmed:true, dir:1, label:"confirmed upside breakout", rangeHigh, rangeLow };
+    }
+    if(breakTick < rangeLow - buffer && confirmTick < breakTick){
+      return { confirmed:true, dir:-1, label:"confirmed downside breakout", rangeHigh, rangeLow };
+    }
+    return { confirmed:false, dir:0, label:"no breakout", rangeHigh, rangeLow };
+  }
+
   function evaluateSignalForInstance(inst){
     const sig = computeSignal(inst.ticks);
     inst.lastSignal = sig.ready ? { level: sig.level, dir: sig.dir, score: sig.score } : null;
@@ -2034,7 +2104,7 @@
         resetFactors();
       } else {
         renderSignal(sig.level, sig.levelLabel, sig.dir, sig.score);
-        renderFactors(sig.runLen, sig.runDir, sig.velocity, sig.velocityScore, sig.structure, sig.rejection);
+        renderFactors(sig.runLen, sig.runDir, sig.velocity, sig.velocityScore, sig.structure, sig.rejection, sig.breakout);
       }
     } else {
       mmUpdateCard(inst.symbol, sig.ready ? sig : null);
@@ -2063,9 +2133,10 @@
     fVelocity.textContent = "0.000/s"; fVelocity.className="factor-val neu";
     fStructure.textContent = "flat"; fStructure.className="factor-val neu";
     fRejection.textContent = "none"; fRejection.className="factor-val neu";
+    fBreakout.textContent = "—"; fBreakout.className="factor-val neu";
   }
 
-  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection){
+  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, breakout){
     fMomentum.textContent = runLen + " tick" + (runLen===1?"":"s") + (runDir>0?" up":runDir<0?" down":"");
     fMomentum.className = "factor-val " + (runDir>0?"pos":runDir<0?"neg":"neu");
     fVelocity.textContent = (velocity>=0?"+":"") + velocity.toFixed(5) + "/s";
@@ -2074,6 +2145,13 @@
     fStructure.className = "factor-val " + (structure.dir>0?"pos":structure.dir<0?"neg":"neu");
     fRejection.textContent = rejection.detected ? rejection.label : "none";
     fRejection.className = "factor-val " + (rejection.detected ? (rejection.dir>0?"pos":"neg") : "neu");
+    if(breakout){
+      fBreakout.textContent = breakout.confirmed ? breakout.label : (breakout.label || "no breakout");
+      fBreakout.className = "factor-val " + (breakout.confirmed ? (breakout.dir>0?"pos":"neg") : "neu");
+    } else {
+      fBreakout.textContent = "—";
+      fBreakout.className = "factor-val neu";
+    }
   }
 
   function decimalsForSymbol(sym){
@@ -3028,7 +3106,8 @@
         mmTargetProfit: parseFloat(mmTargetProfitInput.value) || 0,
         mmResetTargetProfit: parseFloat(mmResetTargetProfitInput.value) || 0,
         autoClearLogEnabled: autoClearLogToggle.checked,
-        reverseMode: cfg.reverseMode
+        reverseMode: cfg.reverseMode,
+        breakoutFilter: cfg.breakoutFilter
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }catch(e){ /* storage unavailable — fail silently */ }
@@ -3084,6 +3163,10 @@
     if(data.reverseMode != null){
       cfg.reverseMode = !!data.reverseMode;
       reverseModeToggle.checked = cfg.reverseMode;
+    }
+    if(data.breakoutFilter != null){
+      cfg.breakoutFilter = !!data.breakoutFilter;
+      breakoutFilterToggle.checked = cfg.breakoutFilter;
     }
 
     if(data.token2){ token2Input.value = data.token2; cfg.token2 = sanitizeToken(data.token2); updateToken2LenHint(); }
@@ -3304,6 +3387,12 @@
 
   symbolSelect.addEventListener("change", function(){
     switchPrimarySymbol(this.value);
+    savePersisted();
+  });
+
+  breakoutFilterToggle.addEventListener("change", function(){
+    cfg.breakoutFilter = this.checked;
+    logSystemNote("Breakout filter " + (this.checked ? "enabled — trades will only fire on a confirmed breakout." : "disabled — trades will fire on signal strength alone again."));
     savePersisted();
   });
 
