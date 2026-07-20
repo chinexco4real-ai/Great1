@@ -225,6 +225,9 @@
   }
   .switch input:checked + .slider{ background:var(--rise-dim); }
   .switch input:checked + .slider::before{ transform:translateX(17px); background:var(--rise); }
+  .switch input:disabled + .slider{ cursor:not-allowed; opacity:0.45; }
+  .toggle-row-disabled{ opacity:0.55; }
+  .toggle-row-disabled .toggle-label::after{ content:" (off — multi-market handles this)"; font-weight:400; color:var(--ink-faint); font-size:10px; }
 
   .seg{
     display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden;
@@ -669,6 +672,18 @@
             <div class="field-hint" style="margin-top:-8px;">Both are universal values applied to every market in the scan, and each only ever applies while that market is on its own stated login — a market is never on both logins at once, so the two never conflict. <b>Reset target (Login 1):</b> the moment a market's own net P&amp;L reaches this amount while it's on Login 1, that market's stats snap back to 0 and it keeps trading. <b>Closing target (Login 2):</b> the moment a market's own net P&amp;L reaches this amount while it's on Login 2, that market closes out and is disabled — it stops trading and drops out of the scan, while every other market keeps running independently until it reaches its own target. Once every selected market has closed out, the scan stops itself. Set either to 0 to disable it.</div>
             <div class="mm-markets" id="mmMarketsRow"></div>
             <div class="mm-conflict" id="mmConflictNote">Dual-login is active — each market in this scan switches to Login 2 independently, the moment its OWN condition 1 or condition 2 is met (not combined with any other market's count). Each market then runs its own Login 2 profit target and timer, and banks its own vault snapshot when that leg ends, all without affecting any other market. A market only waits for its own open trade to settle before switching — other markets are never held up by it.</div>
+
+            <div class="toggle-row" id="mmReverseRow" style="display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--line-soft);">
+              <div>
+                <div class="toggle-label">Login 1 → Login 2 reverse mode</div>
+                <div class="toggle-sub">Per-market, not global: while this is on, every selected market trades <b>normal direction</b> for as long as it's on Login 1, and automatically flips to <b>reverse direction</b> the moment it switches to Login 2 — independently, based on each market's own current login, not a shared switch. One market can be on Login 1 (normal) while another is already on Login 2 (reverse) at the same time. The main <b>Reverse mode</b> toggle on the right is disabled while this is on, since it isn't needed here — each market's reverse behaviour is driven entirely by its own login state instead.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="mmLoginReverseToggle">
+                <span class="slider"></span>
+              </label>
+            </div>
+
             <div class="mm-btnrow">
               <button class="btn btn-primary" id="mmStartBtn" type="button" disabled style="width:auto; padding:10px 18px;">▶ Start multi-market scan</button>
               <button class="btn btn-danger-ghost" id="mmStopBtn" type="button" style="width:auto; padding:10px 18px; display:none;">■ Stop scan</button>
@@ -1156,6 +1171,7 @@
   const masterFlag = $("masterFlag"), masterDot = $("masterDot"), masterText = $("masterText"), masterSub = $("masterSub");
   const mmEnabledToggle = $("mmEnabledToggle"), mmBadge = $("mmBadge"), mmMarketsRow = $("mmMarketsRow");
   const mmConflictNote = $("mmConflictNote"), mmStartBtn = $("mmStartBtn"), mmStopBtn = $("mmStopBtn"), mmCards = $("mmCards");
+  const mmReverseRow = $("mmReverseRow"), mmLoginReverseToggle = $("mmLoginReverseToggle");
 
   /* ===================== SHARED CONFIG =====================
      These are settings the user configures ONCE and which apply as the
@@ -1202,6 +1218,16 @@
     // Universal CLOSING target profit — one value applied to every market
     // in a multi-market scan. Applies ONLY while that market is on Login 2.
     mmTargetProfit: 0,
+
+    // Multi-market "Login 1 → Login 2 reverse mode". When on, each market
+    // in the scan decides its OWN execution direction purely from its OWN
+    // current activeLogin: normal direction while on Login 1, reversed
+    // direction while on Login 2. This is intentionally separate from
+    // cfg.reverseMode (the main Reverse mode toggle) — the two are mutually
+    // exclusive by design (see mmLoginReverseToggle handler, which disables
+    // the main toggle while this is on) so there is never a case where both
+    // try to flip the same trade.
+    mmLoginReverseMode: false,
 
     vaultCap: 50
   };
@@ -1478,7 +1504,22 @@
     // Reverse mode flips only the direction that actually gets traded —
     // the signal itself (level/score, and everything the UI shows) is
     // untouched, so this is the single point where the flip happens.
-    const execDir = cfg.reverseMode ? -sig.dir : sig.dir;
+    //
+    // Two mutually-exclusive sources decide the flip:
+    //  - Multi-market "Login 1 → Login 2 reverse mode" (cfg.mmLoginReverseMode):
+    //    only applies to instances currently participating in a multi-market
+    //    scan, and is keyed off THIS instance's OWN activeLogin — normal on
+    //    Login 1, reversed on Login 2. Each market decides this independently
+    //    of every other market, since each tracks its own activeLogin.
+    //  - The main global Reverse mode toggle (cfg.reverseMode): used for the
+    //    primary single-market panel, and for multi-market instances only
+    //    when the per-login mode above is off. The UI keeps these two from
+    //    ever both being active — the main toggle is disabled while the
+    //    per-login mode is on (see updateMmReverseUI) — so there's no case
+    //    here where both are checked and a trade gets double-flipped.
+    const useMmLoginReverse = inst.inMultiMarketScan && cfg.mmLoginReverseMode;
+    const shouldReverse = useMmLoginReverse ? (inst.activeLogin === 2) : cfg.reverseMode;
+    const execDir = shouldReverse ? -sig.dir : sig.dir;
     placeTradeForInstance(inst, execDir, sig.level, sig.score);
   }
 
@@ -2428,6 +2469,28 @@
     const anySessionReady = (session1.isOpen() && session1.authorized) || (session2.isOpen() && session2.authorized);
     const canStart = mmEnabled && mmSelectedSyms.length >= 1 && !mmActive && anySessionReady;
     mmStartBtn.disabled = !canStart;
+    updateMmReverseUI();
+  }
+
+  // Login 1 → Login 2 reverse mode only makes sense alongside dual-login
+  // auto-switch (it keys off each market's own activeLogin), so the row is
+  // hidden entirely unless dual mode is on. Whenever it IS on, the single
+  // global "Reverse mode" toggle is disabled — this multi-market mode
+  // replaces it with a per-market, per-login decision instead, and running
+  // both at once would double-flip trades on Login 2.
+  function updateMmReverseUI(){
+    if(mmReverseRow) mmReverseRow.style.display = cfg.dualMode ? "" : "none";
+    if(!cfg.dualMode && cfg.mmLoginReverseMode){
+      // Dual mode turned off while this was active — no per-login state to
+      // key off any more, so fall back to the main reverse toggle cleanly.
+      cfg.mmLoginReverseMode = false;
+      if(mmLoginReverseToggle) mmLoginReverseToggle.checked = false;
+    }
+    if(reverseModeToggle){
+      reverseModeToggle.disabled = cfg.mmLoginReverseMode;
+      const row = reverseModeToggle.closest(".toggle-row");
+      if(row) row.classList.toggle("toggle-row-disabled", cfg.mmLoginReverseMode);
+    }
   }
 
   function mmLogNote(text){
@@ -2441,6 +2504,18 @@
   mmEnabledToggle.addEventListener("change", function(){
     mmEnabled = this.checked;
     mmUpdateStartBtn();
+    savePersisted();
+  });
+
+  mmLoginReverseToggle.addEventListener("change", function(){
+    cfg.mmLoginReverseMode = this.checked;
+    updateMmReverseUI();
+    mmLogNote(
+      this.checked
+        ? "Login 1 → Login 2 reverse mode enabled — every selected market now trades normal direction on Login 1 and reversed direction on Login 2, independently, based on its own current login. The main Reverse mode toggle is disabled while this is on."
+        : "Login 1 → Login 2 reverse mode disabled — multi-market trades follow the main Reverse mode toggle again."
+    );
+    allActiveInstances().forEach(function(inst){ if(inst.inMultiMarketScan) mmUpdateCard(inst.symbol); });
     savePersisted();
   });
 
@@ -2534,6 +2609,7 @@
         '<div class="mm-card-head">' +
           '<span class="mm-card-sym">' + label + '</span>' +
           '<span class="mm-card-login" id="mm-login-' + sym + '" style="display:none; font-size:10px; padding:2px 6px; border-radius:4px; background:var(--panel-2); border:1px solid var(--line); color:var(--rise);">LOGIN 1</span>' +
+          '<span class="mm-card-mode" id="mm-mode-' + sym + '" style="display:none; font-size:10px; padding:2px 6px; border-radius:4px; background:var(--panel-2); border:1px solid var(--line);">NORMAL</span>' +
           '<span class="mm-card-phase watch" id="mm-phase-' + sym + '">WARMING UP</span>' +
           '<span class="mm-card-price" id="mm-price-' + sym + '">—</span>' +
         '</div>' +
@@ -2560,6 +2636,21 @@
       loginEl.style.display = cfg.dualMode ? "" : "none";
       loginEl.textContent = "LOGIN " + inst.activeLogin;
       loginEl.style.color = inst.activeLogin === 2 ? "var(--amber)" : "var(--rise)";
+    }
+
+    // Shows this market's own current execution mode when Login 1 → Login 2
+    // reverse mode is on — NORMAL while it's on Login 1, REVERSE the moment
+    // it's on Login 2. Purely a readout of inst.activeLogin; each card only
+    // ever reflects its own instance, never any other market's state.
+    const modeEl = document.getElementById("mm-mode-" + sym);
+    if(modeEl){
+      const showMode = cfg.dualMode && cfg.mmLoginReverseMode;
+      modeEl.style.display = showMode ? "" : "none";
+      if(showMode){
+        const isReverse = inst.activeLogin === 2;
+        modeEl.textContent = isReverse ? "REVERSE" : "NORMAL";
+        modeEl.style.color = isReverse ? "var(--fall)" : "var(--rise)";
+      }
     }
 
     const phaseEl = document.getElementById("mm-phase-" + sym);
@@ -3105,6 +3196,7 @@
         mmSelectedSyms: mmSelectedSyms,
         mmTargetProfit: parseFloat(mmTargetProfitInput.value) || 0,
         mmResetTargetProfit: parseFloat(mmResetTargetProfitInput.value) || 0,
+        mmLoginReverseMode: cfg.mmLoginReverseMode,
         autoClearLogEnabled: autoClearLogToggle.checked,
         reverseMode: cfg.reverseMode,
         breakoutFilter: cfg.breakoutFilter
@@ -3156,6 +3248,10 @@
     if(data.profitTarget != null){ profitTargetInput.value = data.profitTarget; cfg.profitTarget = data.profitTarget; }
     if(data.mmTargetProfit != null){ mmTargetProfitInput.value = data.mmTargetProfit; cfg.mmTargetProfit = data.mmTargetProfit; }
     if(data.mmResetTargetProfit != null){ mmResetTargetProfitInput.value = data.mmResetTargetProfit; cfg.mmResetTargetProfit = data.mmResetTargetProfit; }
+    if(data.mmLoginReverseMode != null){
+      cfg.mmLoginReverseMode = !!data.mmLoginReverseMode;
+      mmLoginReverseToggle.checked = cfg.mmLoginReverseMode;
+    }
     if(data.autoClearLogEnabled != null){
       autoClearLogToggle.checked = !!data.autoClearLogEnabled;
       if(autoClearLogToggle.checked) startAutoClearLog(); else stopAutoClearLog();
