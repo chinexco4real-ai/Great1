@@ -727,6 +727,12 @@
             </div>
             <div class="vault-count" id="vaultCount">0 / 50 boxes</div>
           </div>
+          <div class="field" style="margin-top:12px;">
+            <label>Total vault target profit (USD)</label>
+            <div class="num-field"><input type="number" id="vaultTargetProfitInput" value="0" min="0" step="1"></div>
+            <div class="field-hint">The moment the vault total (across every market's banked Login 2 snapshots) reaches this amount, auto-trading is switched off automatically — nothing else changes: no market is halted, the scan keeps running, and sessions stay connected. Turn auto-trade back on manually whenever you're ready. Set to 0 to disable.</div>
+            <div class="field-hint" id="vaultTargetStatus" style="display:none;"></div>
+          </div>
           <div class="vault-grid" id="vaultGrid">
             <div class="log-empty">No snapshots yet — the vault fills as Login 2 legs complete.</div>
           </div>
@@ -1158,6 +1164,7 @@
   const dualStatus = $("dualStatus");
   const loginOneBadge = $("loginOneBadge");
   const vaultTotalEl = $("vaultTotal"), vaultCountEl = $("vaultCount"), vaultGrid = $("vaultGrid");
+  const vaultTargetProfitInput = $("vaultTargetProfitInput"), vaultTargetStatus = $("vaultTargetStatus");
   const vaultClearBtn = $("vaultClearBtn");
 
   const symbolSelect = $("symbolSelect");
@@ -1233,6 +1240,17 @@
     // in a multi-market scan. Applies ONLY while that market is on Login 2.
     mmTargetProfit: 0,
 
+    // Total vault target profit (USD/account currency, NOT a percentage).
+    // Checked against vault.total (the shared snapshot vault's running
+    // total across every market) every time a new snapshot lands. 0 means
+    // "off", matching every other target/limit field's convention in this
+    // file. Hitting it disables ONLY auto-trading (cfg.autoTrade) — it does
+    // not halt any individual market, does not stop the multi-market scan,
+    // and does not touch any session/connection. See snapshotToVault for
+    // where this is actually checked and vault.targetHit for the one-shot
+    // latch that stops it re-firing on every subsequent snapshot.
+    vaultTargetProfit: 0,
+
     // Multi-market "Login 1 → Login 2 reverse mode". When on, each market
     // in the scan decides its OWN execution direction purely from its OWN
     // current activeLogin: normal direction while on Login 1, reversed
@@ -1264,7 +1282,13 @@
   const vault = {
     boxes: [],   // [{ id, amount, market, trigger, ts }], newest last
     total: 0,
-    nextId: 1
+    nextId: 1,
+    // One-shot latch for cfg.vaultTargetProfit — true once the target has
+    // been hit and auto-trade disabled for it, so a further snapshot (or a
+    // re-render) doesn't re-log/re-disable every time. Re-armed whenever
+    // the vault is cleared or the target amount is changed — see
+    // clearVault() and the vaultTargetProfitInput handler.
+    targetHit: false
   };
 
   // Fixed factor weights for the composite signal (momentum / velocity /
@@ -2012,6 +2036,27 @@
       " from " + inst.label + "'s Login 2 leg (" + triggerLabel + ") into box #" + box.id +
       ". Vault total: " + formatPnl(vault.total) + "."
     );
+
+    // Total vault target profit — a one-shot check against the running
+    // vault total (not any single market's P&L). Disables ONLY auto-trade;
+    // deliberately does not halt any market, stop the scan, or touch any
+    // session, since the vault itself keeps banking snapshots either way.
+    // vault.targetHit stops this firing again on every later snapshot once
+    // it's already tripped — it re-arms in clearVault() and whenever the
+    // target amount itself is changed (see vaultTargetProfitInput below).
+    if(cfg.vaultTargetProfit > 0 && !vault.targetHit && vault.total >= cfg.vaultTargetProfit){
+      vault.targetHit = true;
+      if(cfg.autoTrade){
+        cfg.autoTrade = false;
+        autoToggle.checked = false;
+        updateMasterFlag();
+      }
+      logSystemNote(
+        "Vault target reached: total is now " + formatPnl(vault.total) + " (target was " + formatPnl(cfg.vaultTargetProfit) +
+        ") \u2014 auto-trading has been switched off. Markets, the scan, and sessions are unaffected; turn auto-trade back on manually whenever you're ready."
+      );
+    }
+
     renderVault();
     savePersisted();
   }
@@ -2020,6 +2065,7 @@
     vault.boxes = [];
     vault.total = 0;
     vault.nextId = 1;
+    vault.targetHit = false; // re-arm the target so it can fire again on the next run
     renderVault();
     savePersisted();
   }
@@ -2629,31 +2675,86 @@
     mmLogNote("Multi-market scan started — " + mmSelectedSyms.map(function(s){ return MM_SYMBOLS[s]; }).join(", ") + ". Each market tracks its own dual-login conditions independently.");
   }
 
+  // Stopping the scan is a full reset, not just a stop — EVERY selected
+  // market (Step Index 100 included; nothing here is symbol-specific, it
+  // all runs through the same generic MarketInstance/MM_SYMBOLS machinery
+  // every other symbol uses) goes back to a completely clean 0 state:
+  // trade stats, halt reason, Login 1/2 dual-switch count, reset-target
+  // count, closing-target accumulator, Login 2 timer, and — for the
+  // shared primary/"Market" panel instance specifically — its login is
+  // also put back to Login 1 rather than left stranded on Login 2 with
+  // merely zeroed counters. The shared snapshot vault is cleared too,
+  // since its boxes are per-market snapshots banked during the scan and
+  // "reset all to 0" is meant to be a genuine full wipe, not just stats.
   function stopMultiMarket(){
     if(!mmActive) return;
     mmActive = false;
     mmSelectedSyms.forEach(function(sym){
       const inst = marketInstances[sym];
       if(!inst) return;
+
+      stopLogin2TimerForInstance(inst); // clears the interval AND login2TimerEndsAt — must run for every instance, primary included
+
       if(inst.isPrimary){
-        // Shared primary/scan instance — survives the scan stopping (it's
-        // still the single "Market" panel instance), but is no longer
-        // part of a scan, so it should stop qualifying for scan-only rules.
+        // Shared primary/scan instance — the object itself survives (it's
+        // still the single "Market" panel instance and mustn't be deleted),
+        // but every piece of state on it gets zeroed exactly as if it were
+        // a brand-new instance, matching what non-primary instances get by
+        // being deleted and re-created fresh on the next scan start.
         inst.inMultiMarketScan = false;
+        inst.tradeInFlight = false;
+        inst.haltReason = null;
+        inst.dailyPnl = 0;
+        inst.tradesTotal = 0;
+        inst.tradesWon = 0;
+        inst.tradesLost = 0;
+        inst.consecutiveLosses = 0;
+        inst.consecutiveWins = 0;
+        inst.lastTradeTime = 0;
+        inst.openContracts = {};
+        inst.contractMeta = {};
+        inst.mmTargetHit = false;
+        inst.mmLogin2AccumPnl = 0;
+        inst.mmResetCount = 0;
+        inst.mmLastResetAt = 0;
+        // "Switch count" — the per-market Login 1 <-> Login 2 tally — and
+        // every in-flight dual-switch flag, back to a clean slate.
+        inst.dualSwitchCount = 0;
+        inst.dualSwitchInFlight = false;
+        inst.dualSwitchInFlightSince = 0;
+        inst.dualSwitchPendingLabel = null;
+        inst.dualSwitchPendingSince = 0;
+        inst.dualSwitchPendingNoticeShown = false;
+        // Put the login itself back to 1 rather than leaving a market that
+        // had switched to Login 2 stranded there with zeroed counters —
+        // a full reset means starting over, not "reset stats, stay on 2".
+        if(inst.activeLogin !== 1) assignSession(inst, 1);
+        updateStats();
+        updateMasterFlag();
         return;
       }
-      stopLogin2TimerForInstance(inst);
+
+      // Non-primary instances: deletion IS their reset — there's nothing
+      // left to zero once the object itself is gone, and startMultiMarket
+      // always builds these fresh with new MarketInstance() next time.
       if(inst.session) delete inst.session.markets[sym];
       delete marketInstances[sym];
     });
+
+    // Shared snapshot vault — cleared as part of the same full reset,
+    // since its boxes are per-market Login 2 snapshots banked during the
+    // scan that just stopped, not something meant to survive past it.
+    clearVault();
+
     mmRenderCards();
 
     mmStartBtn.style.display = "inline-block";
     mmStopBtn.style.display = "none";
     mmBadge.classList.remove("show");
     mmMarketsRow.querySelectorAll("input").forEach(function(cb){ cb.disabled = false; });
+    mmUpdateStartBtn(); // refreshes canStart + reverse/level-mode UI now that mmActive is false
 
-    mmLogNote("Multi-market scan stopped.");
+    mmLogNote("Multi-market scan stopped — every selected market (including the primary market, if it was part of the scan) has been fully reset to 0: trade stats, switch count, reset/closing target counters, and the vault.");
   }
 
   function mmRenderCards(){
@@ -2898,6 +2999,22 @@
     vaultTotalEl.textContent = formatPnl(vault.total) + " " + (session1.accountCurrency || session2.accountCurrency || "USD");
     vaultTotalEl.className = "vault-total-num " + (vault.total > 0 ? "pos" : vault.total < 0 ? "neg" : "");
     vaultCountEl.textContent = vault.boxes.length + " / " + cfg.vaultCap + " boxes";
+
+    // Small live readout under the target input — off entirely while the
+    // target is 0 (disabled), otherwise shows progress toward it, or a
+    // confirmation once it's been reached and auto-trade switched off.
+    if(vaultTargetStatus){
+      if(cfg.vaultTargetProfit <= 0){
+        vaultTargetStatus.style.display = "none";
+      } else {
+        vaultTargetStatus.style.display = "";
+        if(vault.targetHit){
+          vaultTargetStatus.innerHTML = "<b style=\"color:var(--rise);\">Target reached</b> — auto-trading was switched off when the vault crossed " + formatPnl(cfg.vaultTargetProfit) + ".";
+        } else {
+          vaultTargetStatus.innerHTML = "Progress: " + formatPnl(vault.total) + " / " + formatPnl(cfg.vaultTargetProfit) + " toward the target.";
+        }
+      }
+    }
 
     if(!vault.boxes.length){
       vaultGrid.innerHTML = '<div class="log-empty">No snapshots yet — the vault fills as each market\'s Login 2 leg completes.</div>';
@@ -3272,6 +3389,8 @@
         vaultBoxes: vault.boxes,
         vaultTotal: vault.total,
         vaultNextId: vault.nextId,
+        vaultTargetProfit: parseFloat(vaultTargetProfitInput.value) || 0,
+        vaultTargetHit: vault.targetHit,
         mmEnabled: mmEnabled,
         mmSelectedSyms: mmSelectedSyms,
         mmTargetProfit: parseFloat(mmTargetProfitInput.value) || 0,
@@ -3381,6 +3500,12 @@
     if(Array.isArray(data.vaultBoxes)) vault.boxes = data.vaultBoxes.slice(-cfg.vaultCap);
     if(typeof data.vaultTotal === "number") vault.total = data.vaultTotal;
     if(typeof data.vaultNextId === "number") vault.nextId = data.vaultNextId;
+    if(data.vaultTargetProfit != null){
+      const v = Math.max(0, parseFloat(data.vaultTargetProfit) || 0);
+      cfg.vaultTargetProfit = v;
+      vaultTargetProfitInput.value = v;
+    }
+    vault.targetHit = !!data.vaultTargetHit;
 
     if(Array.isArray(data.mmSelectedSyms)){
       mmSelectedSyms = data.mmSelectedSyms.filter(function(s){ return MM_SYMBOLS.hasOwnProperty(s); });
@@ -3629,6 +3754,17 @@
   });
   mmTargetProfitInput.addEventListener("input", function(){ cfg.mmTargetProfit = parseFloat(this.value)||0; savePersisted(); if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); }); });
   mmResetTargetProfitInput.addEventListener("input", function(){ cfg.mmResetTargetProfit = parseFloat(this.value)||0; savePersisted(); if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); }); });
+  vaultTargetProfitInput.addEventListener("input", function(){
+    const v = Math.max(0, parseFloat(this.value) || 0);
+    cfg.vaultTargetProfit = v;
+    // Re-arm the one-shot latch whenever the target is raised back above
+    // the current vault total (or turned off) — otherwise, having already
+    // hit a lower target once would silently block it from ever firing
+    // again after being raised, with no error and no obvious explanation.
+    if(v === 0 || vault.total < v) vault.targetHit = false;
+    renderVault();
+    savePersisted();
+  });
   envSelect.addEventListener("change", savePersisted);
 
   window.addEventListener("beforeunload", function(){
