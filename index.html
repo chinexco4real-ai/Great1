@@ -228,6 +228,9 @@
   .switch input:disabled + .slider{ cursor:not-allowed; opacity:0.45; }
   .toggle-row-disabled{ opacity:0.55; }
   .toggle-row-disabled .toggle-label::after{ content:" (off — multi-market handles this)"; font-weight:400; color:var(--ink-faint); font-size:10px; }
+  .field-disabled{ opacity:0.55; }
+  .field-disabled .seg{ pointer-events:none; }
+  .field-disabled label::after{ content:" (off — multi-market level mode handles this)"; font-weight:400; color:var(--ink-faint); font-size:10px; }
 
   .seg{
     display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden;
@@ -641,10 +644,6 @@
               <div class="factor-name">Rejection wick</div>
               <div class="factor-val neu" id="fRejection">none</div>
             </div>
-            <div class="factor">
-              <div class="factor-name">Breakout</div>
-              <div class="factor-val neu" id="fBreakout">—</div>
-            </div>
           </div>
         </div>
 
@@ -680,6 +679,17 @@
               </div>
               <label class="switch">
                 <input type="checkbox" id="mmLoginReverseToggle">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row" id="mmLevelRow" style="display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--line-soft);">
+              <div>
+                <div class="toggle-label">Login 1 → Login 2 level mode</div>
+                <div class="toggle-sub">Per-market, not global: while this is on, every selected market only auto-trades <b>Low+</b> signals for as long as it's on Login 1, and automatically requires <b>Medium+</b> the moment it switches to Login 2 — independently, based on each market's own current login, not a shared switch. One market can be on Login 1 (trading Low+) while another is already on Login 2 (trading Medium+) at the same time. The main <b>Minimum signal strength</b> selector below is disabled while this is on, since it isn't needed here — each market's required strength is driven entirely by its own login state instead. This runs independently of reverse mode above — the two control different things (strength threshold vs. direction) and can be on together.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="mmLoginLevelToggle">
                 <span class="slider"></span>
               </label>
             </div>
@@ -753,18 +763,7 @@
             </label>
           </div>
 
-          <div class="toggle-row">
-            <div>
-              <div class="toggle-label">Breakout filter</div>
-              <div class="toggle-sub">Only trades on a confirmed breakout — price must clear a recent consolidation range and follow through a further tick in the same direction. No confirmed breakout matching the signal's direction means no trade, no matter how strong the signal is.</div>
-            </div>
-            <label class="switch">
-              <input type="checkbox" id="breakoutFilterToggle">
-              <span class="slider"></span>
-            </label>
-          </div>
-
-          <div class="field">
+          <div class="field" id="strengthField">
             <label>Minimum signal strength to trade</label>
             <div class="seg" id="strengthSeg">
               <button data-v="low">Low+</button>
@@ -1156,10 +1155,9 @@
   const priceMain = $("priceMain"), priceDelta = $("priceDelta"), priceMeta = $("priceMeta");
   const tapeEl = $("tape");
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
-  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection"), fBreakout = $("fBreakout");
+  const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection");
   const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
   const reverseModeToggle = $("reverseModeToggle");
-  const breakoutFilterToggle = $("breakoutFilterToggle");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
   const mmTargetProfitInput = $("mmTargetProfitInput");
@@ -1172,6 +1170,8 @@
   const mmEnabledToggle = $("mmEnabledToggle"), mmBadge = $("mmBadge"), mmMarketsRow = $("mmMarketsRow");
   const mmConflictNote = $("mmConflictNote"), mmStartBtn = $("mmStartBtn"), mmStopBtn = $("mmStopBtn"), mmCards = $("mmCards");
   const mmReverseRow = $("mmReverseRow"), mmLoginReverseToggle = $("mmLoginReverseToggle");
+  const mmLevelRow = $("mmLevelRow"), mmLoginLevelToggle = $("mmLoginLevelToggle");
+  const strengthField = $("strengthField");
 
   /* ===================== SHARED CONFIG =====================
      These are settings the user configures ONCE and which apply as the
@@ -1193,7 +1193,6 @@
     profitTarget: 0,
     autoTrade: false,
     reverseMode: false,
-    breakoutFilter: false,
 
     dualMode: false,
     token2: "",
@@ -1229,6 +1228,18 @@
     // try to flip the same trade.
     mmLoginReverseMode: false,
 
+    // Multi-market "Login 1 → Login 2 level mode". When on, each market in
+    // the scan decides its OWN minimum signal strength to trade purely from
+    // its OWN current activeLogin: Low+ while on Login 1, Medium+ while on
+    // Login 2. This is intentionally separate from cfg.minStrength (the main
+    // minimum-strength selector) — the main selector is disabled while this
+    // is on (see mmLoginLevelToggle handler), so there is never a case where
+    // both try to set the threshold for the same trade. Unlike reverse mode
+    // above, this is NOT mutually exclusive with mmLoginReverseMode — the two
+    // control different things (strength threshold vs. direction) and are
+    // free to run at the same time.
+    mmLoginLevelMode: false,
+
     vaultCap: 50
   };
 
@@ -1240,6 +1251,11 @@
     total: 0,
     nextId: 1
   };
+
+  // Fixed factor weights for the composite signal (momentum / velocity /
+  // structure) — see computeSignal below for how these combine into the
+  // directional vote.
+  const FACTOR_WEIGHTS = { momentum: 1.0, velocity: 0.9, structure: 1.1 };
 
   /* ===================== MARKET INSTANCE =====================
      One of these exists per selected market AND for the single "Market"
@@ -1469,15 +1485,22 @@
     if(inst.haltReason) return;
     if(inst.tradeInFlight) return;
     if(inst.dualSwitchInFlight) return; // never open a new trade mid-switch for THIS market
-    if(strengthRank[sig.level] < strengthRank[cfg.minStrength]) return;
-    // Breakout filter: when enabled, only trade the instant a breakout is
-    // confirmed in the SAME direction as the signal about to be traded.
-    // No confirmed breakout (or a breakout the other way) = no trade,
-    // full stop, regardless of how strong the underlying signal is.
-    if(cfg.breakoutFilter){
-      const bo = sig.breakout;
-      if(!bo || !bo.confirmed || bo.dir !== sig.dir) return;
-    }
+
+    // Two mutually-exclusive sources decide the minimum strength required
+    // to trade, same shape as the reverse-mode decision further down:
+    //  - Multi-market "Login 1 → Login 2 level mode" (cfg.mmLoginLevelMode):
+    //    only applies to instances currently participating in a multi-market
+    //    scan, and is keyed off THIS instance's OWN activeLogin — Low+ on
+    //    Login 1, Medium+ on Login 2. Each market decides this independently
+    //    of every other market, since each tracks its own activeLogin.
+    //  - The main global minimum-strength selector (cfg.minStrength): used
+    //    for the primary single-market panel, and for multi-market instances
+    //    only when the per-login mode above is off. The UI keeps these two
+    //    from ever both being active — the main selector is disabled while
+    //    the per-login mode is on (see updateMmLevelUI).
+    const useMmLoginLevel = inst.inMultiMarketScan && cfg.mmLoginLevelMode;
+    const effectiveMinStrength = useMmLoginLevel ? (inst.activeLogin === 2 ? "medium" : "low") : cfg.minStrength;
+    if(strengthRank[sig.level] < strengthRank[effectiveMinStrength]) return;
     if(!inst.session || !inst.session.isOpen()) return;
 
     const now = Date.now();
@@ -1610,6 +1633,8 @@
     if(!poc.is_sold) return;
 
     const profit = parseFloat(poc.profit || 0);
+    const won = profit > 0;
+
     inst.dailyPnl += profit;
     if(inst.activeLogin === 2){
       // Accumulate across every Login 2 leg this market has run — this is
@@ -1623,7 +1648,7 @@
       // total Login 2 profit across all those legs has long since passed it.
       inst.mmLogin2AccumPnl += profit;
     }
-    if(profit > 0){
+    if(won){
       inst.tradesWon++;
       inst.consecutiveLosses = 0;
       inst.consecutiveWins++;
@@ -1961,8 +1986,8 @@
   }
 
   /* ===================== PURE PRICE-ACTION SIGNAL ENGINE =====================
-     Math is unchanged from the previous build — only how it's invoked
-     changed (per-instance instead of duplicated single/multi code paths). */
+     Factor weights (momentum / velocity / structure) are fixed constants —
+     see FACTOR_WEIGHTS above. */
   function computeSignal(ticks){
     if(ticks.length < 25){
       return { ready:false, tickCount: ticks.length };
@@ -1995,9 +2020,8 @@
     const structureDir = structure.dir;
 
     const rejection = detectRejection(prices);
-    const breakout = detectBreakout(prices);
 
-    const votes = [ [runDir, momentumScore*1.0], [velocityDir, velocityScore*0.9], [structureDir, structureScore*1.1] ];
+    const votes = [ [runDir, momentumScore*FACTOR_WEIGHTS.momentum], [velocityDir, velocityScore*FACTOR_WEIGHTS.velocity], [structureDir, structureScore*FACTOR_WEIGHTS.structure] ];
     let upWeight = 0, downWeight = 0;
     votes.forEach(([d,w]) => { if(d>0) upWeight += w; else if(d<0) downWeight += w; });
 
@@ -2026,7 +2050,7 @@
 
     return {
       ready:true, level, levelLabel, dir: compositeDir, score: compositeScore,
-      runLen, runDir, velocity, velocityScore, structure, rejection, breakout
+      runLen, runDir, velocity, velocityScore, structure, rejection
     };
   }
 
@@ -2085,50 +2109,6 @@
     return { detected:false, dir:0, label:"none" };
   }
 
-  // Breakout confirmation: looks for a prior consolidation range, then
-  // requires price to have (a) closed clearly outside that range and
-  // (b) followed through with a second tick beyond the break, in the
-  // same direction — a single spike through the range edge that
-  // immediately snaps back is NOT a confirmed breakout. This is
-  // intentionally its own independent read (not reusing the momentum/
-  // structure/rejection factors) so it can act as a hard gate rather
-  // than another vote in the composite score.
-  function detectBreakout(prices){
-    const n = prices.length;
-    if(n < 14) return { confirmed:false, dir:0, label:"insufficient data" };
-
-    // Consolidation range = the window BEFORE the most recent 3 ticks,
-    // so the breakout itself is never counted as part of its own range.
-    const rangeSlice = prices.slice(n-14, n-3);
-    const rangeHigh = Math.max(...rangeSlice);
-    const rangeLow = Math.min(...rangeSlice);
-    const rangeSize = (rangeHigh - rangeLow) || 0.0000001;
-
-    // A tight-enough consolidation is required — if the "range" is
-    // already trending hard, there's nothing to break out of.
-    const avgStep = avgAbsoluteStep(rangeSlice);
-    if(avgStep > 0 && rangeSize > avgStep * 10){
-      return { confirmed:false, dir:0, label:"no clear range" };
-    }
-
-    const breakTick = prices[n-2];   // the candidate breakout tick
-    const confirmTick = prices[n-1]; // the follow-through tick
-
-    // Require the break to clear the range by a meaningful margin (not
-    // just a single pip over the edge), and the very next tick to
-    // continue in that same direction beyond the break tick itself —
-    // that follow-through is the "confirmation".
-    const buffer = rangeSize * 0.15;
-
-    if(breakTick > rangeHigh + buffer && confirmTick > breakTick){
-      return { confirmed:true, dir:1, label:"confirmed upside breakout", rangeHigh, rangeLow };
-    }
-    if(breakTick < rangeLow - buffer && confirmTick < breakTick){
-      return { confirmed:true, dir:-1, label:"confirmed downside breakout", rangeHigh, rangeLow };
-    }
-    return { confirmed:false, dir:0, label:"no breakout", rangeHigh, rangeLow };
-  }
-
   function evaluateSignalForInstance(inst){
     const sig = computeSignal(inst.ticks);
     inst.lastSignal = sig.ready ? { level: sig.level, dir: sig.dir, score: sig.score } : null;
@@ -2145,7 +2125,7 @@
         resetFactors();
       } else {
         renderSignal(sig.level, sig.levelLabel, sig.dir, sig.score);
-        renderFactors(sig.runLen, sig.runDir, sig.velocity, sig.velocityScore, sig.structure, sig.rejection, sig.breakout);
+        renderFactors(sig.runLen, sig.runDir, sig.velocity, sig.velocityScore, sig.structure, sig.rejection);
       }
     } else {
       mmUpdateCard(inst.symbol, sig.ready ? sig : null);
@@ -2174,10 +2154,9 @@
     fVelocity.textContent = "0.000/s"; fVelocity.className="factor-val neu";
     fStructure.textContent = "flat"; fStructure.className="factor-val neu";
     fRejection.textContent = "none"; fRejection.className="factor-val neu";
-    fBreakout.textContent = "—"; fBreakout.className="factor-val neu";
   }
 
-  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection, breakout){
+  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection){
     fMomentum.textContent = runLen + " tick" + (runLen===1?"":"s") + (runDir>0?" up":runDir<0?" down":"");
     fMomentum.className = "factor-val " + (runDir>0?"pos":runDir<0?"neg":"neu");
     fVelocity.textContent = (velocity>=0?"+":"") + velocity.toFixed(5) + "/s";
@@ -2186,13 +2165,6 @@
     fStructure.className = "factor-val " + (structure.dir>0?"pos":structure.dir<0?"neg":"neu");
     fRejection.textContent = rejection.detected ? rejection.label : "none";
     fRejection.className = "factor-val " + (rejection.detected ? (rejection.dir>0?"pos":"neg") : "neu");
-    if(breakout){
-      fBreakout.textContent = breakout.confirmed ? breakout.label : (breakout.label || "no breakout");
-      fBreakout.className = "factor-val " + (breakout.confirmed ? (breakout.dir>0?"pos":"neg") : "neu");
-    } else {
-      fBreakout.textContent = "—";
-      fBreakout.className = "factor-val neu";
-    }
   }
 
   function decimalsForSymbol(sym){
@@ -2260,10 +2232,23 @@
     inst.contractMeta = {};
     inst.tradeInFlight = false; // explicit — callers (e.g. handleContractSettlement's Login-1 reset branch) may not have cleared this yet
     if(alsoResetAccum) inst.mmLogin2AccumPnl = 0;
+    // NOTE: isPrimary and inMultiMarketScan are NOT mutually exclusive — a
+    // market can be both at once (it's the symbol loaded in the single
+    // "Market" panel AND selected into the multi-market scan; see the
+    // comment in startMultiMarket where inMultiMarketScan gets set to true
+    // on an existing primary instance). Using if/else here used to skip
+    // mmUpdateCard() whenever isPrimary was true, which left that market's
+    // multi-market card showing its stale pre-reset P&L / reset count
+    // forever even though inst.dailyPnl had actually been zeroed above —
+    // this was the cause of the reset count appearing stuck for a market
+    // that also happened to be the primary symbol. Both branches must run
+    // independently, exactly like every other post-settlement UI refresh
+    // in this file (see handleContractSettlement, etc).
     if(inst.isPrimary){
       updateStats();
       updateMasterFlag();
-    } else {
+    }
+    if(inst.inMultiMarketScan){
       mmUpdateCard(inst.symbol);
     }
   }
@@ -2470,6 +2455,7 @@
     const canStart = mmEnabled && mmSelectedSyms.length >= 1 && !mmActive && anySessionReady;
     mmStartBtn.disabled = !canStart;
     updateMmReverseUI();
+    updateMmLevelUI();
   }
 
   // Login 1 → Login 2 reverse mode only makes sense alongside dual-login
@@ -2490,6 +2476,27 @@
       reverseModeToggle.disabled = cfg.mmLoginReverseMode;
       const row = reverseModeToggle.closest(".toggle-row");
       if(row) row.classList.toggle("toggle-row-disabled", cfg.mmLoginReverseMode);
+    }
+  }
+
+  // Login 1 → Login 2 level mode only makes sense alongside dual-login
+  // auto-switch (it keys off each market's own activeLogin), so the row is
+  // hidden entirely unless dual mode is on. Whenever it IS on, the single
+  // global "Minimum signal strength" selector is disabled — this multi-
+  // market mode replaces it with a per-market, per-login decision instead.
+  // Unlike reverse mode, this does NOT touch reverseModeToggle — the two
+  // modes are independent and can run at the same time.
+  function updateMmLevelUI(){
+    if(mmLevelRow) mmLevelRow.style.display = cfg.dualMode ? "" : "none";
+    if(!cfg.dualMode && cfg.mmLoginLevelMode){
+      // Dual mode turned off while this was active — no per-login state to
+      // key off any more, so fall back to the main strength selector cleanly.
+      cfg.mmLoginLevelMode = false;
+      if(mmLoginLevelToggle) mmLoginLevelToggle.checked = false;
+    }
+    if(strengthField){
+      strengthField.classList.toggle("field-disabled", cfg.mmLoginLevelMode);
+      [...strengthSeg.children].forEach(function(b){ b.disabled = cfg.mmLoginLevelMode; });
     }
   }
 
@@ -2514,6 +2521,18 @@
       this.checked
         ? "Login 1 → Login 2 reverse mode enabled — every selected market now trades normal direction on Login 1 and reversed direction on Login 2, independently, based on its own current login. The main Reverse mode toggle is disabled while this is on."
         : "Login 1 → Login 2 reverse mode disabled — multi-market trades follow the main Reverse mode toggle again."
+    );
+    allActiveInstances().forEach(function(inst){ if(inst.inMultiMarketScan) mmUpdateCard(inst.symbol); });
+    savePersisted();
+  });
+
+  mmLoginLevelToggle.addEventListener("change", function(){
+    cfg.mmLoginLevelMode = this.checked;
+    updateMmLevelUI();
+    mmLogNote(
+      this.checked
+        ? "Login 1 → Login 2 level mode enabled — every selected market now requires Low+ signals on Login 1 and Medium+ signals on Login 2, independently, based on its own current login. The main Minimum signal strength selector is disabled while this is on."
+        : "Login 1 → Login 2 level mode disabled — multi-market trades follow the main Minimum signal strength selector again."
     );
     allActiveInstances().forEach(function(inst){ if(inst.inMultiMarketScan) mmUpdateCard(inst.symbol); });
     savePersisted();
@@ -2610,6 +2629,7 @@
           '<span class="mm-card-sym">' + label + '</span>' +
           '<span class="mm-card-login" id="mm-login-' + sym + '" style="display:none; font-size:10px; padding:2px 6px; border-radius:4px; background:var(--panel-2); border:1px solid var(--line); color:var(--rise);">LOGIN 1</span>' +
           '<span class="mm-card-mode" id="mm-mode-' + sym + '" style="display:none; font-size:10px; padding:2px 6px; border-radius:4px; background:var(--panel-2); border:1px solid var(--line);">NORMAL</span>' +
+          '<span class="mm-card-level" id="mm-level-' + sym + '" style="display:none; font-size:10px; padding:2px 6px; border-radius:4px; background:var(--panel-2); border:1px solid var(--line);">LOW+</span>' +
           '<span class="mm-card-phase watch" id="mm-phase-' + sym + '">WARMING UP</span>' +
           '<span class="mm-card-price" id="mm-price-' + sym + '">—</span>' +
         '</div>' +
@@ -2650,6 +2670,24 @@
         const isReverse = inst.activeLogin === 2;
         modeEl.textContent = isReverse ? "REVERSE" : "NORMAL";
         modeEl.style.color = isReverse ? "var(--fall)" : "var(--rise)";
+      }
+    }
+
+    // Shows this market's own current minimum-strength requirement when
+    // Login 1 → Login 2 level mode is on — LOW+ while it's on Login 1,
+    // MEDIUM+ the moment it's on Login 2. Purely a readout of
+    // inst.activeLogin; each card only ever reflects its own instance,
+    // never any other market's state. Independent of the reverse-mode
+    // badge above — both can show at once since the two modes are
+    // unrelated to each other.
+    const levelEl = document.getElementById("mm-level-" + sym);
+    if(levelEl){
+      const showLevel = cfg.dualMode && cfg.mmLoginLevelMode;
+      levelEl.style.display = showLevel ? "" : "none";
+      if(showLevel){
+        const isLogin2 = inst.activeLogin === 2;
+        levelEl.textContent = isLogin2 ? "MEDIUM+" : "LOW+";
+        levelEl.style.color = isLogin2 ? "var(--amber)" : "var(--rise)";
       }
     }
 
@@ -3197,9 +3235,9 @@
         mmTargetProfit: parseFloat(mmTargetProfitInput.value) || 0,
         mmResetTargetProfit: parseFloat(mmResetTargetProfitInput.value) || 0,
         mmLoginReverseMode: cfg.mmLoginReverseMode,
+        mmLoginLevelMode: cfg.mmLoginLevelMode,
         autoClearLogEnabled: autoClearLogToggle.checked,
-        reverseMode: cfg.reverseMode,
-        breakoutFilter: cfg.breakoutFilter
+        reverseMode: cfg.reverseMode
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }catch(e){ /* storage unavailable — fail silently */ }
@@ -3252,6 +3290,10 @@
       cfg.mmLoginReverseMode = !!data.mmLoginReverseMode;
       mmLoginReverseToggle.checked = cfg.mmLoginReverseMode;
     }
+    if(data.mmLoginLevelMode != null){
+      cfg.mmLoginLevelMode = !!data.mmLoginLevelMode;
+      mmLoginLevelToggle.checked = cfg.mmLoginLevelMode;
+    }
     if(data.autoClearLogEnabled != null){
       autoClearLogToggle.checked = !!data.autoClearLogEnabled;
       if(autoClearLogToggle.checked) startAutoClearLog(); else stopAutoClearLog();
@@ -3259,10 +3301,6 @@
     if(data.reverseMode != null){
       cfg.reverseMode = !!data.reverseMode;
       reverseModeToggle.checked = cfg.reverseMode;
-    }
-    if(data.breakoutFilter != null){
-      cfg.breakoutFilter = !!data.breakoutFilter;
-      breakoutFilterToggle.checked = cfg.breakoutFilter;
     }
 
     if(data.token2){ token2Input.value = data.token2; cfg.token2 = sanitizeToken(data.token2); updateToken2LenHint(); }
@@ -3483,12 +3521,6 @@
 
   symbolSelect.addEventListener("change", function(){
     switchPrimarySymbol(this.value);
-    savePersisted();
-  });
-
-  breakoutFilterToggle.addEventListener("change", function(){
-    cfg.breakoutFilter = this.checked;
-    logSystemNote("Breakout filter " + (this.checked ? "enabled — trades will only fire on a confirmed breakout." : "disabled — trades will fire on signal strength alone again."));
     savePersisted();
   });
 
