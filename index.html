@@ -773,6 +773,15 @@
             <div class="field-hint">Only signals at or above this strength will trigger an auto-trade.</div>
           </div>
 
+          <div class="field">
+            <label>Minimum signal strength percentage</label>
+            <div class="num-field">
+              <input type="number" id="minScorePctInput" value="0" min="0" max="100" step="1">
+              <span style="color:var(--ink-faint); font-size:13px; flex-shrink:0;">%</span>
+            </div>
+            <div class="field-hint">Extra floor on top of the level selector above — applies to Medium and High signals only. Blocks any Medium or High trade whose signal score is below this percentage; the score must be equal to or above what's set here. Low signals are exempt and are never affected by this. Set to 0 to disable.</div>
+          </div>
+
           <div class="row">
             <div class="field">
               <label>Stake per trade (USD)</label>
@@ -1157,6 +1166,7 @@
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
   const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection");
   const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
+  const minScorePctInput = $("minScorePctInput");
   const reverseModeToggle = $("reverseModeToggle");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
@@ -1184,6 +1194,11 @@
   const cfg = {
     appId: APP_ID,
     minStrength: "medium",
+    // Minimum signal strength PERCENTAGE floor (0-100). 0 = off. See the
+    // full explanation at its check in maybeAutoTradeInstance — this is an
+    // independent, additional gate on top of minStrength/level mode above,
+    // not a replacement for either of them.
+    minScorePct: 0,
     stake: 1,
     durationValue: 5,
     durationUnit: "t",
@@ -1501,6 +1516,30 @@
     const useMmLoginLevel = inst.inMultiMarketScan && cfg.mmLoginLevelMode;
     const effectiveMinStrength = useMmLoginLevel ? (inst.activeLogin === 2 ? "medium" : "low") : cfg.minStrength;
     if(strengthRank[sig.level] < strengthRank[effectiveMinStrength]) return;
+
+    // Minimum signal strength PERCENTAGE floor — a separate, independent
+    // gate on top of the level gate above, not a replacement for it. Where
+    // the level gate only checks the LOW/MEDIUM/HIGH bucket a signal falls
+    // into, this checks the underlying numeric score directly (the same
+    // number shown as a % in the signal panel), and blocks the trade if
+    // it's below the floor — regardless of which of medium/high that signal
+    // was bucketed into. A HIGH SIGNAL sitting at exactly its 72% bucket
+    // floor is still blocked if the person has set e.g. 80% here.
+    //
+    // Deliberately scoped to MEDIUM and HIGH only — LOW signals are exempt
+    // and always fall through to the level gate above on their own, never
+    // this percentage floor, no matter what it's set to. This is by design:
+    // Low+ already has its own (looser) 22% bucket floor from the level
+    // gate, and applying a stricter percentage on top of it would silently
+    // make "Low+" mean something other than what the level selector says.
+    //
+    // cfg.minScorePct is 0-100; 0 means "off" (matches lossLimit /
+    // profitTarget / mmTargetProfit's existing 0-disables convention
+    // elsewhere in this file), so nothing changes for anyone who never
+    // touches this field. Applies globally — single-market, multi-market,
+    // level-mode on or off — since it targets the raw score, not the level.
+    if(cfg.minScorePct > 0 && sig.level !== "low" && (sig.score * 100) < cfg.minScorePct) return;
+
     if(!inst.session || !inst.session.isOpen()) return;
 
     const now = Date.now();
@@ -2292,7 +2331,9 @@
       masterText.textContent = "Auto-trading is ON";
       masterSub.textContent = (primary && primary.tradeInFlight)
         ? "Trade in progress — waiting for it to settle before the next signal can fire."
-        : "Trading " + cfg.minStrength.toUpperCase() + "+ signals on " + scopeLabel + " · flat stake, no martingale.";
+        : "Trading " + cfg.minStrength.toUpperCase() + "+ signals on " + scopeLabel +
+          (cfg.minScorePct > 0 ? " · " + cfg.minScorePct + "%+ required on Medium/High (Low exempt)" : "") +
+          " · flat stake, no martingale.";
     } else {
       masterFlag.className = "master-flag off";
       masterDot.className = "dot";
@@ -3212,6 +3253,7 @@
         environment2: env2Select.value,
         symbol: primary ? primary.symbol : symbolSelect.value,
         minStrength: cfg.minStrength,
+        minScorePct: cfg.minScorePct,
         stake: parseFloat(stakeInput.value) || 1,
         durationValue: parseInt(durationValueInput.value, 10) || 1,
         durationUnit: durationUnitSelect.value,
@@ -3277,6 +3319,11 @@
     if(data.minStrength){
       cfg.minStrength = data.minStrength;
       [...strengthSeg.children].forEach(b=>{ b.classList.toggle("active", b.dataset.v === data.minStrength); });
+    }
+    if(data.minScorePct != null){
+      const v = Math.max(0, Math.min(100, parseFloat(data.minScorePct) || 0));
+      cfg.minScorePct = v;
+      minScorePctInput.value = v;
     }
     if(data.stake != null){ stakeInput.value = data.stake; cfg.stake = data.stake; }
     if(data.durationValue != null){ durationValueInput.value = data.durationValue; cfg.durationValue = data.durationValue; }
@@ -3572,6 +3619,14 @@
   cooldownSelect.addEventListener("change", function(){ cfg.cooldown = parseInt(this.value,10); savePersisted(); });
   lossLimitInput.addEventListener("change", function(){ cfg.lossLimit = parseFloat(this.value)||0; savePersisted(); });
   profitTargetInput.addEventListener("change", function(){ cfg.profitTarget = parseFloat(this.value)||0; savePersisted(); });
+  minScorePctInput.addEventListener("change", function(){
+    let v = parseFloat(this.value);
+    if(isNaN(v)) v = 0;
+    v = Math.max(0, Math.min(100, v)); // clamp — this is a percentage, not an open-ended limit
+    this.value = v;
+    cfg.minScorePct = v;
+    savePersisted();
+  });
   mmTargetProfitInput.addEventListener("input", function(){ cfg.mmTargetProfit = parseFloat(this.value)||0; savePersisted(); if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); }); });
   mmResetTargetProfitInput.addEventListener("input", function(){ cfg.mmResetTargetProfit = parseFloat(this.value)||0; savePersisted(); if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); }); });
   envSelect.addEventListener("change", savePersisted);
