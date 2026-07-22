@@ -598,18 +598,26 @@
         <div class="panel">
           <div class="panel-head">
             <div class="panel-title">Market</div>
-            <select class="sym-select" id="symbolSelect">
-              <option value="R_10">Volatility 10 Index</option>
-              <option value="R_25">Volatility 25 Index</option>
-              <option value="R_50">Volatility 50 Index</option>
-              <option value="R_75" selected>Volatility 75 Index</option>
-              <option value="R_100">Volatility 100 Index</option>
-              <option value="stpRNG">Step Index 100</option>
-              <option value="stpRNG2">Step Index 200</option>
-              <option value="stpRNG3">Step Index 300</option>
-              <option value="stpRNG4">Step Index 400</option>
-              <option value="stpRNG5">Step Index 500</option>
-            </select>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+              <select class="sym-select" id="symbolSelect">
+                <option value="R_10">Volatility 10 Index</option>
+                <option value="R_25">Volatility 25 Index</option>
+                <option value="R_50">Volatility 50 Index</option>
+                <option value="R_75" selected>Volatility 75 Index</option>
+                <option value="R_100">Volatility 100 Index</option>
+                <option value="stpRNG">Step Index 100</option>
+                <option value="stpRNG2">Step Index 200</option>
+                <option value="stpRNG3">Step Index 300</option>
+                <option value="stpRNG4">Step Index 400</option>
+                <option value="stpRNG5">Step Index 500</option>
+              </select>
+              <select class="sym-select" id="timeframeSelect" title="Analysis timeframe">
+                <option value="tick">Tick chart</option>
+                <option value="60">Candle · 1min</option>
+                <option value="180">Candle · 3min</option>
+                <option value="300">Candle · 5min</option>
+              </select>
+            </div>
           </div>
 
           <div class="price-row">
@@ -629,19 +637,19 @@
 
           <div class="factors">
             <div class="factor">
-              <div class="factor-name">Momentum run</div>
-              <div class="factor-val neu" id="fMomentum">0 ticks</div>
+              <div class="factor-name">Momentum</div>
+              <div class="factor-val neu" id="fMomentum">flat</div>
             </div>
             <div class="factor">
-              <div class="factor-name">Tick velocity</div>
-              <div class="factor-val neu" id="fVelocity">0.000/s</div>
+              <div class="factor-name">CCI · Ocean</div>
+              <div class="factor-val neu" id="fVelocity">—</div>
             </div>
             <div class="factor">
-              <div class="factor-name">Micro structure</div>
-              <div class="factor-val neu" id="fStructure">flat</div>
+              <div class="factor-name">Stoch RSI · Ocean</div>
+              <div class="factor-val neu" id="fStructure">—</div>
             </div>
             <div class="factor">
-              <div class="factor-name">Rejection wick</div>
+              <div class="factor-name">MACD cross</div>
               <div class="factor-val neu" id="fRejection">none</div>
             </div>
           </div>
@@ -936,6 +944,8 @@
         switch(msg.msg_type){
           case "tick": onTickForSession(this, msg.tick); break;
           case "history": onHistoryForSession(this, msg); break;
+          case "candles": /* handled via the send() callback in subscribeCandlesForInstance */ break;
+          case "ohlc": onOhlcForSession(this, msg.ohlc); break;
           case "proposal_open_contract": onOpenContractForSession(this, msg.proposal_open_contract); break;
           case "balance": this.onBalance(msg.balance); break;
         }
@@ -1168,6 +1178,7 @@
   const vaultClearBtn = $("vaultClearBtn");
 
   const symbolSelect = $("symbolSelect");
+  const timeframeSelect = $("timeframeSelect");
   const priceMain = $("priceMain"), priceDelta = $("priceDelta"), priceMeta = $("priceMeta");
   const tapeEl = $("tape");
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
@@ -1291,10 +1302,32 @@
     targetHit: false
   };
 
-  // Fixed factor weights for the composite signal (momentum / velocity /
-  // structure) — see computeSignal below for how these combine into the
-  // directional vote.
-  const FACTOR_WEIGHTS = { momentum: 1.0, velocity: 0.9, structure: 1.1 };
+  // ===================== BEN SNIPER STRATEGY CONFIG =====================
+  // Fixed indicator parameters for the "Ben Sniper" engine (Momentum / CCI /
+  // Stochastic RSI / MACD). See computeSignal below for how the four
+  // indicators combine into a single directional call.
+  const SNIPER = {
+    momentumLen: 10,     // classic Momentum: price now vs price N bars ago
+    cciLen: 20,           // CCI period
+    cciOceanLevel: 100,   // |CCI| below this = "inside the ocean" zone
+    stochRsiLen: 14,      // RSI period feeding the Stochastic
+    stochLen: 14,         // Stochastic lookback over the RSI series
+    stochK: 3,            // %K smoothing
+    stochD: 3,            // %D smoothing
+    stochOceanLow: 20,    // Stoch RSI ocean band (oversold side)
+    stochOceanHigh: 80,   // Stoch RSI ocean band (overbought side)
+    macdFast: 12,
+    macdSlow: 26,
+    macdSignal: 9,
+    macdMinSeparation: 0.00003 // min gap between MACD/signal line, scaled by price step, before "separating" counts
+  };
+
+  // Analysis timeframe: "tick" = raw tick-by-tick, or a number of seconds
+  // (60/180/300) meaning candles are built from ticks at that period. This
+  // is purely which bars the Ben Sniper indicators are calculated on —
+  // every other feature (auto-trade, multi-market, dual login, vault, etc.)
+  // is untouched by it.
+  let currentTimeframe = "tick";
 
   /* ===================== MARKET INSTANCE =====================
      One of these exists per selected market AND for the single "Market"
@@ -1323,8 +1356,22 @@
       // appearing to just stop working with no error and no explanation).
       this.inMultiMarketScan = !!isPrimary ? false : true;
       this.ticks          = [];
+      // Real, exchange-built OHLC bars for candle-timeframe analysis (see
+      // subscribeCandlesForInstance) — separate from inst.ticks, which
+      // stays reserved for tick-mode analysis and the price/tape display.
+      this.candles         = [];
+      this.candleGranularity = null; // 60/180/300 (seconds) once subscribed, else null
+      this.candlesReady    = false;
+      this.candleSubscriptionId = null;
       this.lastPrice      = null;
       this.lastTradeTime  = 0;
+      // Identifies the MACD-cross "setup" (see computeSignal's setupId)
+      // that this instance's most recent trade was taken against. Once
+      // set, the SAME setup can never fire another auto-trade — only a
+      // genuinely new crossover (a new setupId) can arm the next entry.
+      // This is what makes entries "per signal", not continuous re-firing
+      // while a single cross is still separating.
+      this.lastTradedSetupId = null;
       this.tradeInFlight  = false;
       this.haltReason     = null;
       this.dailyPnl       = 0;
@@ -1421,6 +1468,10 @@
     if(!session || !session.isOpen()) return;
     inst.ticks = [];
     inst.subscribed = false;
+    // Tick history is only needed for "tick" timeframe analysis and the
+    // price/tape display now — candle timeframes get real OHLC bars
+    // straight from Deriv (see subscribeCandlesForInstance), so this no
+    // longer needs to be oversized to approximate candles client-side.
     session.send({
       ticks_history: inst.symbol,
       adjust_start_time: 1,
@@ -1441,6 +1492,12 @@
         }
       });
       inst.subscribed = true;
+      // If a candle timeframe is currently selected, this market also
+      // needs real OHLC history/stream — ticks alone aren't enough to
+      // drive candle-mode analysis reliably (see subscribeCandlesForInstance).
+      if(currentTimeframe !== "tick"){
+        subscribeCandlesForInstance(inst, currentTimeframe);
+      }
       if(inst.inMultiMarketScan) mmUpdateCard(inst.symbol);
     });
   }
@@ -1470,6 +1527,88 @@
     // subscribeMarketOnSession — nothing additional to do on the generic
     // msg_type dispatch, kept only so the switch in handleMessage has an
     // explicit branch (mirrors the previous onHistory hook).
+  }
+
+  // ===================== CANDLE HISTORY + LIVE OHLC STREAM =====================
+  // Populates inst.candles with real, exchange-built OHLC bars (not a
+  // client-side aggregation of the tick buffer) for whichever candle
+  // timeframe is selected, then subscribes to the live "in-progress candle"
+  // stream so the current bar keeps updating tick-by-tick until it closes.
+  // This only runs for candle timeframes ("60"/"180"/"300") — "tick" mode
+  // keeps using inst.ticks directly and never touches this path.
+  const CANDLE_HISTORY_COUNT = 60; // plenty above MIN_BARS with headroom to spare
+
+  function subscribeCandlesForInstance(inst, granularitySec){
+    const session = inst.session;
+    if(!session || !session.isOpen()) return;
+    const granularity = parseInt(granularitySec, 10);
+    if(!granularity) return;
+
+    // Unsubscribe any previous candle stream (different granularity, or a
+    // re-subscribe) before starting a new one, so a market never ends up
+    // receiving two overlapping OHLC streams for itself.
+    unsubscribeCandlesForInstance(inst);
+
+    inst.candles = [];
+    inst.candleGranularity = granularity;
+    inst.candlesReady = false;
+
+    session.send({
+      ticks_history: inst.symbol,
+      adjust_start_time: 1,
+      count: CANDLE_HISTORY_COUNT,
+      end: "latest",
+      style: "candles",
+      granularity: granularity
+    }, function(msg){
+      if(inst.candleGranularity !== granularity) return; // superseded by a newer switch mid-flight
+      if(msg.candles){
+        inst.candles = msg.candles.map(function(c){
+          return { open: parseFloat(c.open), high: parseFloat(c.high), low: parseFloat(c.low), close: parseFloat(c.close), epoch: c.epoch };
+        });
+        inst.candlesReady = true;
+        evaluateSignalForInstance(inst);
+      }
+      session.send({ ticks_history: inst.symbol, style: "candles", granularity: granularity, subscribe: 1 }, function(subMsg){
+        if(subMsg && subMsg.error){
+          logSystemNote(inst.label + ": candle subscribe failed — " + subMsg.error.message);
+          return;
+        }
+        if(subMsg && subMsg.subscription){
+          inst.candleSubscriptionId = subMsg.subscription.id;
+        }
+      });
+      if(inst.inMultiMarketScan) mmUpdateCard(inst.symbol);
+    });
+  }
+
+  function unsubscribeCandlesForInstance(inst){
+    const session = inst.session;
+    if(session && session.isOpen() && inst.candleSubscriptionId){
+      session.send({ forget: inst.candleSubscriptionId });
+    }
+    inst.candleSubscriptionId = null;
+  }
+
+  // Live OHLC updates: the current (still-forming) candle is replaced in
+  // place by epoch match; a new epoch means the previous candle has closed
+  // and a fresh one has opened, so it's appended.
+  function onOhlcForSession(session, ohlc){
+    if(!ohlc) return;
+    const inst = session.markets[ohlc.symbol];
+    if(!inst || !inst.candles) return;
+    if(inst.candleGranularity && parseInt(ohlc.granularity,10) !== inst.candleGranularity) return;
+
+    const bar = { open: parseFloat(ohlc.open), high: parseFloat(ohlc.high), low: parseFloat(ohlc.low), close: parseFloat(ohlc.close), epoch: ohlc.open_time || ohlc.epoch };
+    const last = inst.candles[inst.candles.length - 1];
+    if(last && last.epoch === bar.epoch){
+      inst.candles[inst.candles.length - 1] = bar; // update the in-progress candle
+    } else {
+      inst.candles.push(bar); // a new candle has opened — previous one is now closed
+      if(inst.candles.length > CANDLE_HISTORY_COUNT + 20) inst.candles.shift();
+    }
+    evaluateSignalForInstance(inst);
+    if(inst.inMultiMarketScan) mmUpdateCard(inst.symbol);
   }
 
   function onOpenContractForSession(session, poc){
@@ -1525,6 +1664,15 @@
     if(inst.tradeInFlight) return;
     if(inst.dualSwitchInFlight) return; // never open a new trade mid-switch for THIS market
 
+    // "Per signal, not continuous" — this exact MACD-cross setup (see
+    // computeSignal's setupId) may only ever produce ONE auto-trade. If
+    // the same crossover is still separating on later bars (or the app
+    // simply re-evaluates on the next tick/candle while nothing new has
+    // happened), this blocks a second entry against it. A genuinely new
+    // setup only exists once the histogram crosses zero again — that
+    // produces a different setupId and re-arms the gate.
+    if(sig.setupId && inst.lastTradedSetupId === sig.setupId) return;
+
     // Two mutually-exclusive sources decide the minimum strength required
     // to trade, same shape as the reverse-mode decision further down:
     //  - Multi-market "Login 1 → Login 2 level mode" (cfg.mmLoginLevelMode):
@@ -1542,26 +1690,18 @@
     if(strengthRank[sig.level] < strengthRank[effectiveMinStrength]) return;
 
     // Minimum signal strength PERCENTAGE floor — a separate, independent
-    // gate on top of the level gate above, not a replacement for it. Where
-    // the level gate only checks the LOW/MEDIUM/HIGH bucket a signal falls
-    // into, this checks the underlying numeric score directly (the same
-    // number shown as a % in the signal panel), and blocks the trade if
-    // it's below the floor — regardless of which of medium/high that signal
-    // was bucketed into. A HIGH SIGNAL sitting at exactly its 72% bucket
-    // floor is still blocked if the person has set e.g. 80% here.
-    //
-    // Deliberately scoped to MEDIUM and HIGH only — LOW signals are exempt
-    // and always fall through to the level gate above on their own, never
-    // this percentage floor, no matter what it's set to. This is by design:
-    // Low+ already has its own (looser) 22% bucket floor from the level
-    // gate, and applying a stricter percentage on top of it would silently
-    // make "Low+" mean something other than what the level selector says.
+    // gate on top of the level gate above. NOTE: since the MKOREAN rules
+    // require ALL FOUR indicator gates (Momentum/CCI/StochRSI/MACD) to
+    // align before a signal exists at all (see computeSignal), sig.level
+    // is now binary — "high" or "none" — and any real signal's score is
+    // always exactly 100%. This floor is kept for anyone who sets it above
+    // 100 as an extra safety no-op, but in practice it can never block a
+    // signal that already passed the level gate above.
     //
     // cfg.minScorePct is 0-100; 0 means "off" (matches lossLimit /
     // profitTarget / mmTargetProfit's existing 0-disables convention
     // elsewhere in this file), so nothing changes for anyone who never
-    // touches this field. Applies globally — single-market, multi-market,
-    // level-mode on or off — since it targets the raw score, not the level.
+    // touches this field.
     if(cfg.minScorePct > 0 && sig.level !== "low" && (sig.score * 100) < cfg.minScorePct) return;
 
     if(!inst.session || !inst.session.isOpen()) return;
@@ -1587,6 +1727,7 @@
     }
 
     inst.lastTradeTime = now;
+    inst.lastTradedSetupId = sig.setupId; // mark this exact crossover as consumed — no repeat entries on it
     // Reverse mode flips only the direction that actually gets traded —
     // the signal itself (level/score, and everything the UI shows) is
     // untouched, so this is the single point where the flip happens.
@@ -1812,6 +1953,7 @@
     mmUpdateCard(inst.symbol);
 
     if(inst.session) delete inst.session.markets[inst.symbol];
+    unsubscribeCandlesForInstance(inst);
     delete marketInstances[inst.symbol];
 
     mmLogNote(inst.label + ": closing target profit of +" + cfg.mmTargetProfit.toFixed(2) + " reached (accumulated Login 2 net " + formatPnl(inst.mmLogin2AccumPnl) + ") — market closed and disabled. Other markets continue independently.");
@@ -2070,132 +2212,316 @@
     savePersisted();
   }
 
-  /* ===================== PURE PRICE-ACTION SIGNAL ENGINE =====================
-     Factor weights (momentum / velocity / structure) are fixed constants —
-     see FACTOR_WEIGHTS above. */
-  function computeSignal(ticks){
-    if(ticks.length < 25){
-      return { ready:false, tickCount: ticks.length };
+  /* ===================== BEN SNIPER SIGNAL ENGINE =====================
+     Four indicators, each with a defined job (see SNIPER config above):
+       1. Momentum   — overall direction (blue line up/down)
+       2. CCI        — market surety #1: blue line inside/entering the
+                        "ocean" (|CCI| < cciOceanLevel) AND turning the
+                        trade's direction
+       3. Stoch RSI  — market surety #2: %K/%D just inside the ocean band
+                        (20–80) AND turning the trade's direction
+       4. MACD       — execution trigger: line crosses signal line, THEN
+                        the two must visibly separate before entry fires
+     All four must agree for a trade-grade signal; partial agreement still
+     shows on the panel but scores low and won't clear the HIGH bar.
+     Bars come from two different sources depending on currentTimeframe:
+       - "tick"  → every raw tick in inst.ticks, one bar per tick
+       - 60/180/300 → real, exchange-built OHLC candles in inst.candles,
+         fetched + streamed live from Deriv (see subscribeCandlesForInstance)
+     Either way the same indicator math runs unchanged below. */
+
+  function buildBars(inst, timeframe){
+    if(timeframe === "tick" || !timeframe){
+      return inst.ticks.map(t => ({ close: t.price, epoch: t.epoch }));
     }
-    const window = ticks.slice(-40);
-    const prices = window.map(t => t.price);
+    // Candle mode: use the real OHLC bars Deriv already built — no
+    // client-side bucketing/aggregation of the tick stream.
+    return (inst.candles || []).map(c => ({ open: c.open, high: c.high, low: c.low, close: c.close, epoch: c.epoch }));
+  }
 
-    let runLen = 0, runDir = 0;
-    for(let i = prices.length - 1; i > 0; i--){
-      const d = prices[i] - prices[i-1];
-      const dir = d > 0 ? 1 : d < 0 ? -1 : 0;
-      if(dir === 0) break;
-      if(runDir === 0) runDir = dir;
-      if(dir !== runDir) break;
-      runLen++;
+  // Lightweight readiness check (matches computeSignal's own MIN_BARS) used
+  // by multi-market card rendering so its "warming up" phase agrees with
+  // whatever currentTimeframe is actually selected, instead of always
+  // checking raw tick count regardless of mode.
+  function instHasEnoughBars(inst){
+    const bars = currentTimeframe === "tick" ? inst.ticks : (inst.candles || []);
+    return bars.length >= 40;
+  }
+
+  function computeSignal(inst){
+    const timeframe = currentTimeframe;
+    const bars = buildBars(inst, timeframe);
+    // Real candle history from Deriv arrives in one shot (CANDLE_HISTORY_COUNT
+    // bars), so candle mode can demand the same full window as tick mode —
+    // there's no more guesswork about whether enough history was captured.
+    const MIN_BARS = 40;
+    if(bars.length < MIN_BARS){
+      const tickCount = timeframe === "tick" ? inst.ticks.length : (inst.candles ? inst.candles.length : 0);
+      return { ready:false, tickCount, barCount: bars.length, minBars: MIN_BARS };
     }
-    const momentumScore = Math.min(runLen / 8, 1);
+    const closes = bars.map(b => b.close);
 
-    const first = window[0], last = window[window.length - 1];
-    const dt = Math.max(1, last.epoch - first.epoch);
-    const totalMove = last.price - first.price;
-    const velocity = totalMove / dt;
-    const avgAbsStep = avgAbsoluteStep(prices);
-    const velocityScore = avgAbsStep > 0 ? Math.min(Math.abs(velocity) / (avgAbsStep * 2), 1) : 0;
-    const velocityDir = velocity > 0 ? 1 : velocity < 0 ? -1 : 0;
+    // 1) MOMENTUM — direction of the market. The Momentum line itself
+    // (price now vs price N bars ago) points up when its value is
+    // positive and down when negative — that sign IS the line's
+    // direction, exactly like reading it visually on a chart. Ties (flat
+    // momentum) fall back to the line's own slope so a value sitting
+    // exactly at zero still resolves to a direction if it's clearly
+    // trending through zero.
+    const momentum = computeMomentumSeries(closes, SNIPER.momentumLen);
+    const momNow = momentum[momentum.length - 1];
+    const momPrev = momentum[momentum.length - 2];
+    const momentumDir = momNow > 0 ? 1 : momNow < 0 ? -1 : (momNow > momPrev ? 1 : momNow < momPrev ? -1 : 0);
+    const momentumLabel = momentumDir > 0 ? "rising" : momentumDir < 0 ? "falling" : "flat";
 
-    const swings = findSwings(prices);
-    const structure = classifyStructure(swings);
-    const structureScore = structure.strength;
-    const structureDir = structure.dir;
+    // 2) CCI — market surety #1, read against the "ocean" (|CCI| < level)
+    const cciSeries = computeCciSeries(bars, SNIPER.cciLen);
+    const cciNow = cciSeries[cciSeries.length - 1];
+    const cciPrev = cciSeries[cciSeries.length - 2];
+    const cciInOcean = Math.abs(cciNow) <= SNIPER.cciOceanLevel;
+    const cciApproachingOcean = !cciInOcean && Math.abs(cciNow) <= SNIPER.cciOceanLevel * 1.15;
+    const cciTurnDir = cciNow > cciPrev ? 1 : cciNow < cciPrev ? -1 : 0;
+    const ccisOk = (cciInOcean || cciApproachingOcean);
 
-    const rejection = detectRejection(prices);
+    // 3) STOCHASTIC RSI — market surety #2, read against its ocean band.
+    // The rules say "Stochastic RSI lines" (plural) — %K and its smoothed
+    // %D — must BOTH be inside/entering the ocean and BOTH facing the
+    // trade's direction, not just %K alone.
+    const stoch = computeStochRsiSeries(closes, SNIPER.stochRsiLen, SNIPER.stochLen, SNIPER.stochK, SNIPER.stochD);
+    const kNow = stoch.k[stoch.k.length - 1], kPrev = stoch.k[stoch.k.length - 2];
+    const dNow = stoch.d[stoch.d.length - 1], dPrev = stoch.d[stoch.d.length - 2];
+    const kInOcean = kNow >= SNIPER.stochOceanLow && kNow <= SNIPER.stochOceanHigh;
+    const dInOcean = dNow >= SNIPER.stochOceanLow && dNow <= SNIPER.stochOceanHigh;
+    const stochInOcean = kInOcean && dInOcean;
+    const kTurnDir = kNow > kPrev ? 1 : kNow < kPrev ? -1 : 0;
+    const dTurnDir = dNow > dPrev ? 1 : dNow < dPrev ? -1 : 0;
+    // Both lines must agree on direction for stochTurnDir to resolve to
+    // anything other than 0 (no clear shared slope) — a single combined
+    // value is kept so the gate check below stays a simple equality test.
+    const stochTurnDir = (kTurnDir === dTurnDir) ? kTurnDir : 0;
 
-    const votes = [ [runDir, momentumScore*FACTOR_WEIGHTS.momentum], [velocityDir, velocityScore*FACTOR_WEIGHTS.velocity], [structureDir, structureScore*FACTOR_WEIGHTS.structure] ];
-    let upWeight = 0, downWeight = 0;
-    votes.forEach(([d,w]) => { if(d>0) upWeight += w; else if(d<0) downWeight += w; });
+    // 4) MACD — precise entry trigger, exactly as specified:
+    //    RISE: blue (MACD) crosses ABOVE orange (signal) → wait for the
+    //          two lines to start separating → THEN trade RISE.
+    //    FALL: blue (MACD) crosses BELOW orange (signal) → wait for the
+    //          two lines to start separating → THEN trade FALL.
+    //    Never enter on the exact crossover bar itself.
+    const macd = computeMacdSeries(closes, SNIPER.macdFast, SNIPER.macdSlow, SNIPER.macdSignal);
+    const hist = macd.histogram; // hist = macdLine - signalLine; sign flip == a crossover
+    const hNow = hist[hist.length - 1];
 
-    let compositeDir = 0;
-    let compositeScore = 0;
-    if(upWeight === 0 && downWeight === 0){
-      compositeDir = 0; compositeScore = 0;
-    } else if(upWeight >= downWeight){
-      compositeDir = 1; compositeScore = upWeight / 3.0;
-    } else {
-      compositeDir = -1; compositeScore = downWeight / 3.0;
+    // Find the most recent crossover and exactly which bar it happened on
+    // (barsSinceCross = 0 means the cross itself just happened this bar).
+    // Only look within a short recent window — an old cross from many
+    // bars back is not "the" trigger anymore, it's just trend continuation.
+    const LOOKBACK = 6;
+    let crossDir = 0, barsSinceCross = -1, crossEpoch = null;
+    for(let back = 0; back < LOOKBACK && hist.length - 2 - back >= 0; back++){
+      const i = hist.length - 1 - back;
+      if(hist[i-1] <= 0 && hist[i] > 0){ crossDir = 1; barsSinceCross = back; crossEpoch = bars[i] ? bars[i].epoch : null; break; }
+      if(hist[i-1] >= 0 && hist[i] < 0){ crossDir = -1; barsSinceCross = back; crossEpoch = bars[i] ? bars[i].epoch : null; break; }
+    }
+    const crossedUp = crossDir === 1;
+    const crossedDown = crossDir === -1;
+
+    // Separation is only meaningful counted FROM the crossover bar forward:
+    // the gap between the lines (|histogram|) must be strictly growing,
+    // bar over bar, every bar since the cross, and must have cleared a
+    // minimum size — not merely "bigger than one bar ago" from some
+    // unrelated point in an established trend.
+    let separating = false;
+    if(crossDir !== 0 && barsSinceCross >= 1){
+      // barsSinceCross >= 1 enforces "never enter on the exact crossover
+      // bar" — at least one bar must have printed after the cross.
+      const crossIdx = hist.length - 1 - barsSinceCross;
+      let monotonic = true;
+      for(let i = crossIdx + 1; i < hist.length; i++){
+        if(Math.abs(hist[i]) <= Math.abs(hist[i-1])){ monotonic = false; break; }
+      }
+      separating = monotonic && Math.abs(hNow) > SNIPER.macdMinSeparation;
     }
 
-    if(rejection.detected && rejection.dir === -compositeDir){
-      compositeScore *= 0.4;
-    } else if(rejection.detected && rejection.dir === compositeDir){
-      compositeScore = Math.min(1, compositeScore + 0.15);
-    }
-    compositeScore = Math.max(0, Math.min(1, compositeScore));
+    // Trigger fires only for: a real recent crossover, in the requested
+    // direction, that has since begun separating, and is not the
+    // crossover bar itself.
+    const macdTriggerDir = (crossDir === 1 && separating) ? 1
+                          : (crossDir === -1 && separating) ? -1
+                          : 0;
+    // "Crossed, still waiting for separation to confirm" — the explicit
+    // intermediate state from the rules (don't trade yet, but the cross
+    // has happened and we're watching for the lines to start diverging).
+    const macdWaitingDir = (crossDir !== 0 && !separating) ? crossDir : 0;
 
+    // setupId uniquely identifies THIS crossover event (by the epoch of
+    // the bar it happened on, plus its direction) — used downstream to
+    // enforce "one entry per setup, not continuous": once a trade has
+    // been taken against a given setupId, that same crossover can never
+    // fire another entry, even if MACD is still separating on later bars.
+    // A genuinely new setup only exists once a fresh crossover occurs at
+    // a new epoch.
+    const setupId = crossEpoch != null ? (crossDir + ":" + crossEpoch) : null;
+
+    // ── Combine: EVERY gate below must independently hold in the SAME
+    // direction for a signal to exist at all. This is a strict AND, not a
+    // weighted vote — there is no partial credit, and no gate can be
+    // skipped or compensated for by the others being strong. If any one
+    // of the four fails, dir stays 0 and no signal is produced, full stop.
+    //
+    //   Gate 1 — Momentum:     line must point the trade's direction.
+    //   Gate 2 — CCI:          must be inside/just-entering the Ocean AND
+    //                          sloping the trade's direction.
+    //   Gate 3 — Stoch RSI:    must be inside the Ocean AND sloping the
+    //                          trade's direction.
+    //   Gate 4 — MACD:         must have crossed (recently) AND be
+    //                          confirmed separating in the trade's
+    //                          direction (never the cross bar itself).
+    let dir = 0;
+    let score = 0;
+
+    // Candidate direction is only ever tried in the direction Momentum is
+    // actually pointing — there is no "candidate" to test if Momentum
+    // itself is flat, since Gate 1 could never pass either way.
+    const candidateDir = momentumDir;
+
+    if(candidateDir !== 0){
+      const gate1Momentum = momentumDir === candidateDir;
+      const gate2Cci = ccisOk && cciTurnDir === candidateDir;
+      const gate3Stoch = stochInOcean && stochTurnDir === candidateDir;
+      const gate4Macd = macdTriggerDir === candidateDir;
+
+      const allGatesPass = gate1Momentum && gate2Cci && gate3Stoch && gate4Macd;
+      dir = allGatesPass ? candidateDir : 0;
+
+      // Score reflects how many of the 4 gates currently agree, purely for
+      // the on-panel readout/percentage display — it plays NO role in
+      // whether dir fires. A signal either has all 4 gates (dir !== 0,
+      // score = 100%) or it does not exist (dir = 0), regardless of score.
+      let gatesPassing = 0;
+      if(gate1Momentum) gatesPassing++;
+      if(gate2Cci) gatesPassing++;
+      if(gate3Stoch) gatesPassing++;
+      if(gate4Macd) gatesPassing++;
+      else if(macdWaitingDir === candidateDir) gatesPassing += 0.5; // "crossed, waiting to separate" shown as partial credit on the readout only
+      score = gatesPassing / 4;
+    }
+
+    score = Math.max(0, Math.min(1, score));
+
+    // Level is intentionally binary now: because dir only ever becomes
+    // non-zero when ALL FOUR gates pass together, every real MKOREAN
+    // signal is by definition full-strength — there is no "medium
+    // confidence" partial version of this setup, only "not yet aligned"
+    // (no signal) or "fully aligned" (signal). The existing Low+/Medium+/
+    // High minimum-strength selector elsewhere in the UI still works
+    // exactly as before; it just now only ever sees "high" or "none",
+    // since that's the truth of the strategy as specified.
     let level = "none", levelLabel = "NO SIGNAL";
-    if(compositeScore >= 0.72){ level = "high"; levelLabel = "HIGH SIGNAL"; }
-    else if(compositeScore >= 0.45){ level = "medium"; levelLabel = "MEDIUM SIGNAL"; }
-    else if(compositeScore >= 0.22){ level = "low"; levelLabel = "LOW SIGNAL"; }
-    else { level = "none"; levelLabel = "NO SIGNAL"; compositeDir = 0; }
+    if(dir !== 0){ level = "high"; levelLabel = "HIGH SIGNAL"; }
+    else { level = "none"; levelLabel = "NO SIGNAL"; dir = 0; }
 
     return {
-      ready:true, level, levelLabel, dir: compositeDir, score: compositeScore,
-      runLen, runDir, velocity, velocityScore, structure, rejection
+      ready:true, level, levelLabel, dir, score, setupId,
+      // Kept for the on-panel factor readout (renderFactors/resetFactors)
+      // and for anything else that inspects the last signal's detail.
+      momentumDir, momentumLabel,
+      cci: { value: cciNow, inOcean: cciInOcean, approaching: cciApproachingOcean, turnDir: cciTurnDir },
+      stochRsi: { k: kNow, d: dNow, inOcean: stochInOcean, turnDir: stochTurnDir },
+      macd: { histogram: hNow, crossedUp, crossedDown, separating, triggerDir: macdTriggerDir, waitingDir: macdWaitingDir }
     };
   }
 
-  function avgAbsoluteStep(prices){
-    let sum = 0, n = 0;
-    for(let i=1;i<prices.length;i++){ sum += Math.abs(prices[i]-prices[i-1]); n++; }
-    return n ? sum/n : 0;
+  // ---- indicator math -----------------------------------------------
+
+  function computeMomentumSeries(closes, len){
+    const out = [];
+    for(let i=0;i<closes.length;i++){
+      const refIdx = i - len;
+      out.push(refIdx >= 0 ? closes[i] - closes[refIdx] : 0);
+    }
+    return out;
   }
 
-  function findSwings(prices){
-    const swings = [];
-    for(let i=2;i<prices.length-2;i++){
-      const a=prices[i-2], b=prices[i-1], c=prices[i], d=prices[i+1], e=prices[i+2];
-      if(c > a && c > b && c > d && c > e) swings.push({ i, price:c, type:"H" });
-      else if(c < a && c < b && c < d && c < e) swings.push({ i, price:c, type:"L" });
+  function computeCciSeries(bars, len){
+    // Typical price = close for tick bars (no high/low); OHLC candles use (H+L+C)/3.
+    const tp = bars.map(b => (b.high !== undefined) ? (b.high + b.low + b.close) / 3 : b.close);
+    const out = new Array(tp.length).fill(0);
+    for(let i=0;i<tp.length;i++){
+      if(i < len - 1) continue;
+      const slice = tp.slice(i - len + 1, i + 1);
+      const sma = slice.reduce((a,b)=>a+b,0) / len;
+      const meanDev = slice.reduce((a,b)=>a+Math.abs(b-sma),0) / len;
+      out[i] = meanDev === 0 ? 0 : (tp[i] - sma) / (0.015 * meanDev);
     }
-    return swings;
+    return out;
   }
 
-  function classifyStructure(swings){
-    if(swings.length < 3) return { dir:0, strength:0, label:"flat" };
-    const highs = swings.filter(s=>s.type==="H").slice(-3);
-    const lows = swings.filter(s=>s.type==="L").slice(-3);
-    let hh=false, hl=false, lh=false, ll=false;
-    if(highs.length>=2) hh = highs[highs.length-1].price > highs[highs.length-2].price;
-    if(highs.length>=2) lh = highs[highs.length-1].price < highs[highs.length-2].price;
-    if(lows.length>=2) hl = lows[lows.length-1].price > lows[lows.length-2].price;
-    if(lows.length>=2) ll = lows[lows.length-1].price < lows[lows.length-2].price;
-
-    if(hh && hl) return { dir:1, strength:0.85, label:"HH / HL (uptrend)" };
-    if(ll && lh) return { dir:-1, strength:0.85, label:"LL / LH (downtrend)" };
-    if(hh) return { dir:1, strength:0.5, label:"higher highs" };
-    if(ll) return { dir:-1, strength:0.5, label:"lower lows" };
-    if(hl) return { dir:1, strength:0.35, label:"higher lows" };
-    if(lh) return { dir:-1, strength:0.35, label:"lower highs" };
-    return { dir:0, strength:0.15, label:"ranging" };
+  function computeRsiSeries(closes, len){
+    const out = new Array(closes.length).fill(50);
+    let avgGain = 0, avgLoss = 0;
+    for(let i=1;i<closes.length;i++){
+      const change = closes[i] - closes[i-1];
+      const gain = change > 0 ? change : 0;
+      const loss = change < 0 ? -change : 0;
+      if(i <= len){
+        avgGain += gain / len;
+        avgLoss += loss / len;
+        if(i === len){
+          out[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain/avgLoss));
+        }
+      } else {
+        avgGain = (avgGain*(len-1) + gain) / len;
+        avgLoss = (avgLoss*(len-1) + loss) / len;
+        out[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain/avgLoss));
+      }
+    }
+    return out;
   }
 
-  function detectRejection(prices){
-    const n = prices.length;
-    if(n < 8) return { detected:false, dir:0 };
-    const recent = prices.slice(n-8, n-1);
-    const spikeIdx = n-2;
-    const localMin = Math.min(...recent);
-    const localMax = Math.max(...recent);
-    const spike = prices[spikeIdx];
-    const now = prices[n-1];
-    const range = (localMax - localMin) || 0.0000001;
+  function computeStochRsiSeries(closes, rsiLen, stochLen, kSmooth, dSmooth){
+    const rsi = computeRsiSeries(closes, rsiLen);
+    const rawK = new Array(rsi.length).fill(50);
+    for(let i=0;i<rsi.length;i++){
+      if(i < stochLen - 1) continue;
+      const slice = rsi.slice(i - stochLen + 1, i + 1);
+      const lo = Math.min(...slice), hi = Math.max(...slice);
+      rawK[i] = hi === lo ? 50 : ((rsi[i] - lo) / (hi - lo)) * 100;
+    }
+    const k = smoothSma(rawK, kSmooth);
+    const d = smoothSma(k, dSmooth);
+    return { k, d };
+  }
 
-    if(spike >= localMax && (spike - now) > range * 0.35){
-      return { detected:true, dir:-1, label:"upper rejection" };
+  function smoothSma(series, len){
+    const out = new Array(series.length).fill(series[0] || 0);
+    for(let i=0;i<series.length;i++){
+      if(i < len - 1){ out[i] = series[i]; continue; }
+      const slice = series.slice(i - len + 1, i + 1);
+      out[i] = slice.reduce((a,b)=>a+b,0) / len;
     }
-    if(spike <= localMin && (now - spike) > range * 0.35){
-      return { detected:true, dir:1, label:"lower rejection" };
+    return out;
+  }
+
+  function computeEmaSeries(values, len){
+    const out = new Array(values.length).fill(values[0] || 0);
+    const k = 2 / (len + 1);
+    out[0] = values[0];
+    for(let i=1;i<values.length;i++){
+      out[i] = values[i]*k + out[i-1]*(1-k);
     }
-    return { detected:false, dir:0, label:"none" };
+    return out;
+  }
+
+  function computeMacdSeries(closes, fastLen, slowLen, signalLen){
+    const fast = computeEmaSeries(closes, fastLen);
+    const slow = computeEmaSeries(closes, slowLen);
+    const macdLine = closes.map((_,i) => fast[i] - slow[i]);
+    const signalLine = computeEmaSeries(macdLine, signalLen);
+    const histogram = macdLine.map((v,i) => v - signalLine[i]);
+    return { macdLine, signalLine, histogram };
   }
 
   function evaluateSignalForInstance(inst){
-    const sig = computeSignal(inst.ticks);
+    const sig = computeSignal(inst);
     inst.lastSignal = sig.ready ? { level: sig.level, dir: sig.dir, score: sig.score } : null;
     inst.currentSignal = inst.lastSignal;
 
@@ -2204,13 +2530,14 @@
         sigLevelLabel.textContent = "NO SIGNAL";
         sigDir.textContent = "— WARMING UP —";
         sigDir.className = "signal-dir none";
-        sigConf.textContent = "Collecting ticks (" + sig.tickCount + "/25 minimum)…";
+        sigConf.textContent = "Collecting " + (currentTimeframe === "tick" ? "ticks" : "candles") +
+          " (" + (sig.barCount || 0) + "/" + (sig.minBars || 40) + " minimum)…";
         confFill.style.width = "0%";
         confFill.style.background = "var(--wire)";
         resetFactors();
       } else {
         renderSignal(sig.level, sig.levelLabel, sig.dir, sig.score);
-        renderFactors(sig.runLen, sig.runDir, sig.velocity, sig.velocityScore, sig.structure, sig.rejection);
+        renderFactors(sig);
       }
     } else {
       mmUpdateCard(inst.symbol, sig.ready ? sig : null);
@@ -2235,21 +2562,35 @@
   }
 
   function resetFactors(){
-    fMomentum.textContent = "0 ticks"; fMomentum.className="factor-val neu";
-    fVelocity.textContent = "0.000/s"; fVelocity.className="factor-val neu";
-    fStructure.textContent = "flat"; fStructure.className="factor-val neu";
+    fMomentum.textContent = "flat"; fMomentum.className="factor-val neu";
+    fVelocity.textContent = "—"; fVelocity.className="factor-val neu";
+    fStructure.textContent = "—"; fStructure.className="factor-val neu";
     fRejection.textContent = "none"; fRejection.className="factor-val neu";
   }
 
-  function renderFactors(runLen, runDir, velocity, velocityScore, structure, rejection){
-    fMomentum.textContent = runLen + " tick" + (runLen===1?"":"s") + (runDir>0?" up":runDir<0?" down":"");
-    fMomentum.className = "factor-val " + (runDir>0?"pos":runDir<0?"neg":"neu");
-    fVelocity.textContent = (velocity>=0?"+":"") + velocity.toFixed(5) + "/s";
-    fVelocity.className = "factor-val " + (velocity>0?"pos":velocity<0?"neg":"neu");
-    fStructure.textContent = structure.label;
-    fStructure.className = "factor-val " + (structure.dir>0?"pos":structure.dir<0?"neg":"neu");
-    fRejection.textContent = rejection.detected ? rejection.label : "none";
-    fRejection.className = "factor-val " + (rejection.detected ? (rejection.dir>0?"pos":"neg") : "neu");
+  // sig is the object returned by computeSignal() when ready:true — see
+  // the Ben Sniper engine above for the shape of sig.cci / sig.stochRsi /
+  // sig.macd.
+  function renderFactors(sig){
+    fMomentum.textContent = sig.momentumLabel;
+    fMomentum.className = "factor-val " + (sig.momentumDir>0?"pos":sig.momentumDir<0?"neg":"neu");
+
+    const cci = sig.cci;
+    fVelocity.textContent = Math.round(cci.value) + (cci.inOcean ? " · in ocean" : cci.approaching ? " · nearing ocean" : " · outside");
+    fVelocity.className = "factor-val " + (cci.turnDir>0 && (cci.inOcean||cci.approaching) ? "pos" : cci.turnDir<0 && (cci.inOcean||cci.approaching) ? "neg" : "neu");
+
+    const st = sig.stochRsi;
+    fStructure.textContent = Math.round(st.k) + "/" + Math.round(st.d) + (st.inOcean ? " · in ocean" : " · outside");
+    fStructure.className = "factor-val " + (st.turnDir>0 && st.inOcean ? "pos" : st.turnDir<0 && st.inOcean ? "neg" : "neu");
+
+    const m = sig.macd;
+    let macdText = "none";
+    if(m.triggerDir > 0) macdText = "crossed up · separating";
+    else if(m.triggerDir < 0) macdText = "crossed down · separating";
+    else if(m.waitingDir > 0) macdText = "crossed up · waiting to separate";
+    else if(m.waitingDir < 0) macdText = "crossed down · waiting to separate";
+    fRejection.textContent = macdText;
+    fRejection.className = "factor-val " + (m.triggerDir>0?"pos":m.triggerDir<0?"neg":"neu");
   }
 
   function decimalsForSymbol(sym){
@@ -2313,7 +2654,7 @@
     inst.consecutiveWins = 0;
     inst.haltReason = null;
     inst.lastTradeTime = 0;
-    inst.openContracts = {};
+    inst.lastTradedSetupId = null;
     inst.contractMeta = {};
     inst.tradeInFlight = false; // explicit — callers (e.g. handleContractSettlement's Login-1 reset branch) may not have cleared this yet
     if(alsoResetAccum) inst.mmLogin2AccumPnl = 0;
@@ -2711,7 +3052,7 @@
         inst.consecutiveLosses = 0;
         inst.consecutiveWins = 0;
         inst.lastTradeTime = 0;
-        inst.openContracts = {};
+        inst.lastTradedSetupId = null;
         inst.contractMeta = {};
         inst.mmTargetHit = false;
         inst.mmLogin2AccumPnl = 0;
@@ -2738,6 +3079,7 @@
       // left to zero once the object itself is gone, and startMultiMarket
       // always builds these fresh with new MarketInstance() next time.
       if(inst.session) delete inst.session.markets[sym];
+      unsubscribeCandlesForInstance(inst);
       delete marketInstances[sym];
     });
 
@@ -2839,7 +3181,7 @@
       if(inst.mmTargetHit){ label = "TARGET HIT"; cls = "closed"; }
       else if(inst.haltReason){ label = "HALTED"; cls = "halted"; }
       else if(inst.tradeInFlight){ label = "IN TRADE"; cls = "armed"; }
-      else if(inst.ticks.length < 25){ label = "WARMING UP"; cls = "warm"; }
+      else if(!instHasEnoughBars(inst)){ label = "WARMING UP"; cls = "warm"; }
       else if(inst.lastSignal && inst.lastSignal.dir !== 0){ label = "SIGNAL"; cls = "armed"; }
       phaseEl.textContent = label;
       phaseEl.className = "mm-card-phase " + cls;
@@ -2879,8 +3221,10 @@
     if(sigEl){
       if(inst.haltReason){
         sigEl.textContent = inst.haltReason;
-      } else if(inst.ticks.length < 25){
-        sigEl.textContent = "Collecting ticks (" + inst.ticks.length + "/25 minimum)…";
+      } else if(!instHasEnoughBars(inst)){
+        const count = currentTimeframe === "tick" ? inst.ticks.length : (inst.candles ? inst.candles.length : 0);
+        const unit = currentTimeframe === "tick" ? "ticks" : "candles";
+        sigEl.textContent = "Collecting " + unit + " (" + count + "/40 minimum)…";
       } else {
         const sig = sigOverride || inst.lastSignal;
         if(sig && sig.dir){
@@ -3347,6 +3691,7 @@
     if(primary && primary.symbol === sym) return;
     if(primary){
       if(primary.session) delete primary.session.markets[primary.symbol];
+      unsubscribeCandlesForInstance(primary);
       delete marketInstances[primary.symbol];
       stopLogin2TimerForInstance(primary);
     }
@@ -3398,7 +3743,8 @@
         mmLoginReverseMode: cfg.mmLoginReverseMode,
         mmLoginLevelMode: cfg.mmLoginLevelMode,
         autoClearLogEnabled: autoClearLogToggle.checked,
-        reverseMode: cfg.reverseMode
+        reverseMode: cfg.reverseMode,
+        timeframe: currentTimeframe
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }catch(e){ /* storage unavailable — fail silently */ }
@@ -3434,6 +3780,10 @@
     if(data.environment) envSelect.value = data.environment;
     if(data.environment2){ env2Select.value = data.environment2; cfg.environment2 = data.environment2; }
     if(data.symbol) symbolSelect.value = data.symbol;
+    if(data.timeframe && (data.timeframe === "tick" || ["60","180","300"].includes(String(data.timeframe)))){
+      currentTimeframe = String(data.timeframe);
+      timeframeSelect.value = currentTimeframe;
+    }
 
     if(data.minStrength){
       cfg.minStrength = data.minStrength;
@@ -3693,6 +4043,30 @@
 
   symbolSelect.addEventListener("change", function(){
     switchPrimarySymbol(this.value);
+    savePersisted();
+  });
+
+  timeframeSelect.addEventListener("change", function(){
+    currentTimeframe = this.value;
+    const label = this.value === "tick" ? "tick chart" : (parseInt(this.value,10)/60) + "min candles";
+    logSystemNote("Analysis timeframe switched to " + label + " — the Ben Sniper indicators now recalculate on " + label + ".");
+    allActiveInstances().forEach(function(inst){
+      if(currentTimeframe === "tick"){
+        // Dropping back to tick mode — no candle stream needed; leave any
+        // existing one running is wasteful, so tear it down.
+        unsubscribeCandlesForInstance(inst);
+        evaluateSignalForInstance(inst);
+      } else {
+        // Switching to a candle timeframe (or changing which one) — fetch
+        // real OHLC history for it and subscribe to the live stream.
+        // evaluateSignalForInstance runs automatically once that history
+        // reply lands (see subscribeCandlesForInstance), so the panel
+        // shows "warming up" honestly in the meantime rather than a stale
+        // tick-mode reading.
+        subscribeCandlesForInstance(inst, currentTimeframe);
+        evaluateSignalForInstance(inst);
+      }
+    });
     savePersisted();
   });
 
