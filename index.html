@@ -1569,7 +1569,7 @@
         inst.candlesReady = true;
         evaluateSignalForInstance(inst);
       }
-      session.send({ ticks_history: inst.symbol, style: "candles", granularity: granularity, subscribe: 1 }, function(subMsg){
+      session.send({ ticks_history: inst.symbol, adjust_start_time: 1, end: "latest", style: "candles", granularity: granularity, subscribe: 1 }, function(subMsg){
         if(subMsg && subMsg.error){
           logSystemNote(inst.label + ": candle subscribe failed — " + subMsg.error.message);
           return;
