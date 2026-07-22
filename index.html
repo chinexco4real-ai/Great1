@@ -951,8 +951,17 @@
         }
       }
       if(msg.req_id && this.pending[msg.req_id]){
-        try{ this.pending[msg.req_id](msg); }catch(e){ console.error("[TICKFRAME] handler error", e); }
+        const handler = this.pending[msg.req_id];
         delete this.pending[msg.req_id];
+        // Errors are already fully handled/logged by handleApiError() above;
+        // still deliver the message to the per-request handler so call sites
+        // can react (e.g. clear a "connecting…" UI state), but suppress any
+        // handler-side error logging so the same failure isn't reported twice.
+        if(msg.error){
+          try{ handler(Object.assign({}, msg, { _errorAlreadyLogged: true })); }catch(e){ console.error("[TICKFRAME] handler error", e); }
+        } else {
+          try{ handler(msg); }catch(e){ console.error("[TICKFRAME] handler error", e); }
+        }
       }
     }
 
@@ -1362,6 +1371,7 @@
       this.candles         = [];
       this.candleGranularity = null; // 60/180/300 (seconds) once subscribed, else null
       this.candlesReady    = false;
+      this._candleRetryCount = 0;   // consecutive candle-subscribe failures (resets on success)
       this.candleSubscriptionId = null;
       this.lastPrice      = null;
       this.lastTradeTime  = 0;
@@ -1487,7 +1497,7 @@
         evaluateSignalForInstance(inst);
       }
       session.send({ ticks: inst.symbol, subscribe: 1 }, function(subMsg){
-        if(subMsg && subMsg.error){
+        if(subMsg && subMsg.error && !subMsg._errorAlreadyLogged){
           logSystemNote(inst.label + ": subscribe failed — " + subMsg.error.message);
         }
       });
@@ -1571,9 +1581,32 @@
       }
       session.send({ ticks_history: inst.symbol, adjust_start_time: 1, end: "latest", style: "candles", granularity: granularity, subscribe: 1 }, function(subMsg){
         if(subMsg && subMsg.error){
-          logSystemNote(inst.label + ": candle subscribe failed — " + subMsg.error.message);
+          if(!subMsg._errorAlreadyLogged){
+            logSystemNote(inst.label + ": candle subscribe failed — " + subMsg.error.message);
+          }
+          // Validation/auth failures won't fix themselves on retry — those
+          // are already handled (and reconnected, if needed) centrally by
+          // handleApiError. Anything else (generic/transient server errors)
+          // gets a few short, bounded retries so a one-off hiccup doesn't
+          // permanently stall this market's candle stream.
+          const code = subMsg.error.code || "";
+          const nonRetryable = code === "ValidationError" || code === "Unauthorized" || code === "InputValidationFailed";
+          if(!nonRetryable && inst.candleGranularity === granularity){
+            inst._candleRetryCount = (inst._candleRetryCount || 0) + 1;
+            if(inst._candleRetryCount <= 3){
+              const delay = 1500 * inst._candleRetryCount;
+              setTimeout(function(){
+                if(inst.candleGranularity === granularity && session.isOpen()){
+                  subscribeCandlesForInstance(inst, granularity);
+                }
+              }, delay);
+            } else {
+              logSystemNote(inst.label + ": candle subscribe still failing after 3 retries — check connection.");
+            }
+          }
           return;
         }
+        inst._candleRetryCount = 0; // reset on success
         if(subMsg && subMsg.subscription){
           inst.candleSubscriptionId = subMsg.subscription.id;
         }
