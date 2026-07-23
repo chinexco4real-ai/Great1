@@ -3026,6 +3026,20 @@
     }
     allActiveInstances().forEach(function(inst){ resetInstanceSession(inst, true); });
     tradeLog.innerHTML = '<div class="log-empty">No trades yet this session.</div>';
+
+    // A manual reset is meant to be a genuine full wipe, so it also clears
+    // any accumulator snapshots banked during earlier pause-mode trips
+    // (see triggerAccumPause/snapshotAccumTotal) — those boxes only ever
+    // existed to record what pause mode already reset live markets to, so
+    // once the user resets everything by hand there's nothing left for
+    // that log to be a record of. Does NOT touch a countdown that's
+    // currently running — a live pause still finishes and resumes on its
+    // own schedule regardless of this button.
+    mmAccum.snapBoxes = [];
+    mmAccum.snapTotal = 0;
+    mmAccum.snapNextId = 1;
+    renderAccumSnapLog();
+    savePersisted();
   }
 
   function updateStats(){
