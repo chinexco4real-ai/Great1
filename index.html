@@ -830,9 +830,13 @@
           </div>
 
           <div class="row" id="trendFilterParamsRow" style="display:none;">
-            <div class="field">
-              <label id="trendEmaLenLabel">EMA period</label>
-              <div class="num-field"><input type="number" id="trendEmaLenInput" value="50" min="5" step="1"></div>
+            <div class="field" id="trendEmaSingleWrap">
+              <label>EMA period</label>
+              <div class="num-field"><input type="number" id="trendEmaSingleInput" value="50" min="5" step="1"></div>
+            </div>
+            <div class="field" id="trendEmaSlowWrap" style="display:none;">
+              <label>Slow EMA period</label>
+              <div class="num-field"><input type="number" id="trendEmaSlowInput" value="50" min="5" step="1"></div>
             </div>
             <div class="field" id="trendEmaFastWrap" style="display:none;">
               <label>Fast EMA period</label>
@@ -1244,8 +1248,10 @@
   const autoToggle = $("autoToggle");
   const reverseModeToggle = $("reverseModeToggle");
   const trendFilterSelect = $("trendFilterSelect"), trendFilterHint = $("trendFilterHint");
-  const trendFilterParamsRow = $("trendFilterParamsRow"), trendEmaLenLabel = $("trendEmaLenLabel");
-  const trendEmaLenInput = $("trendEmaLenInput"), trendEmaFastWrap = $("trendEmaFastWrap"), trendEmaFastInput = $("trendEmaFastInput");
+  const trendFilterParamsRow = $("trendFilterParamsRow");
+  const trendEmaSingleWrap = $("trendEmaSingleWrap"), trendEmaSingleInput = $("trendEmaSingleInput");
+  const trendEmaSlowWrap = $("trendEmaSlowWrap"), trendEmaSlowInput = $("trendEmaSlowInput");
+  const trendEmaFastWrap = $("trendEmaFastWrap"), trendEmaFastInput = $("trendEmaFastInput");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
   const mmTargetProfitInput = $("mmTargetProfitInput");
@@ -4303,7 +4309,8 @@
     if(data.trendEmaLen != null) SNIPER.trendEmaLen = Math.max(5, parseInt(data.trendEmaLen,10) || 50);
     if(data.trendEmaFast != null) SNIPER.trendEmaFast = Math.max(2, parseInt(data.trendEmaFast,10) || 20);
     if(data.trendEmaSlow != null) SNIPER.trendEmaSlow = Math.max(5, parseInt(data.trendEmaSlow,10) || 50);
-    trendEmaLenInput.value = trendFilterSelect.value === "dual" ? SNIPER.trendEmaSlow : SNIPER.trendEmaLen;
+    trendEmaSingleInput.value = SNIPER.trendEmaLen;
+    trendEmaSlowInput.value = SNIPER.trendEmaSlow;
     trendEmaFastInput.value = SNIPER.trendEmaFast;
     updateTrendFilterUi();
 
@@ -4602,14 +4609,16 @@
       trendFilterHint.textContent = "Off: signals fire exactly as originally specified — Momentum, CCI, Stoch RSI and MACD only, no trend bias. When enabled, a 5th gate is added: a trade can only fire in the direction of the prevailing trend, so the EA never trades against it.";
     } else if(mode === "single"){
       trendFilterParamsRow.style.display = "flex";
-      trendEmaLenLabel.textContent = "EMA period";
+      trendEmaSingleWrap.style.display = "";
+      trendEmaSlowWrap.style.display = "none";
       trendEmaFastWrap.style.display = "none";
       trendFilterHint.textContent = "Single EMA: a trade only fires when price is on the trend side of the EMA AND the EMA itself is sloping that way. Blocks counter-trend signals from the original 4-gate engine; does not change how those 4 gates work.";
     } else if(mode === "dual"){
       trendFilterParamsRow.style.display = "flex";
-      trendEmaLenLabel.textContent = "Slow EMA period";
+      trendEmaSingleWrap.style.display = "none";
+      trendEmaSlowWrap.style.display = "";
       trendEmaFastWrap.style.display = "";
-      trendFilterHint.textContent = "Dual EMA: a trade only fires when the fast EMA is above the slow EMA (uptrend) for a Rise signal, or below it (downtrend) for a Fall signal. Does not change how the original 4 gates work.";
+      trendFilterHint.textContent = "Dual EMA: a trade only fires when the fast EMA is above the slow EMA (uptrend) for a Rise signal, or below it (downtrend) for a Fall signal. Fast and slow periods are independent fields — does not change how the original 4 gates work.";
     }
   }
 
@@ -4619,15 +4628,26 @@
     logSystemNote("Trend filter set to " + (this.value === "off" ? "OFF — original 4-gate mode." : this.value === "single" ? "SINGLE EMA — trades gated to the EMA trend direction." : "DUAL EMA — trades gated to the fast/slow EMA cross direction."));
     savePersisted();
   });
-  trendEmaLenInput.addEventListener("change", function(){
+  trendEmaSingleInput.addEventListener("change", function(){
     const v = Math.max(5, parseInt(this.value,10) || 50);
     this.value = v;
-    if(trendFilterSelect.value === "dual") SNIPER.trendEmaSlow = v;
-    else SNIPER.trendEmaLen = v;
+    SNIPER.trendEmaLen = v;
+    savePersisted();
+  });
+  trendEmaSlowInput.addEventListener("change", function(){
+    let v = Math.max(5, parseInt(this.value,10) || 50);
+    // Slow EMA must genuinely be slower than fast — if the user sets it
+    // equal to or below the fast period, push it just above fast rather
+    // than silently letting the two collapse to the same value (which
+    // would make trendDir always read 0, i.e. filter permanently blocks).
+    if(v <= SNIPER.trendEmaFast) v = SNIPER.trendEmaFast + 1;
+    this.value = v;
+    SNIPER.trendEmaSlow = v;
     savePersisted();
   });
   trendEmaFastInput.addEventListener("change", function(){
-    const v = Math.max(2, parseInt(this.value,10) || 20);
+    let v = Math.max(2, parseInt(this.value,10) || 20);
+    if(v >= SNIPER.trendEmaSlow) v = Math.max(2, SNIPER.trendEmaSlow - 1);
     this.value = v;
     SNIPER.trendEmaFast = v;
     savePersisted();
