@@ -819,6 +819,27 @@
             </label>
           </div>
 
+          <div class="field">
+            <label>Trend filter (Gate 5)</label>
+            <select class="sym-select" id="trendFilterSelect" style="width:100%">
+              <option value="off" selected>Off — original 4-gate Ben Sniper mode</option>
+              <option value="single">Single EMA — price vs EMA + EMA slope</option>
+              <option value="dual">Dual EMA — fast EMA vs slow EMA cross</option>
+            </select>
+            <div class="field-hint" id="trendFilterHint" style="margin-top:8px;">Off: signals fire exactly as originally specified — Momentum, CCI, Stoch RSI and MACD only, no trend bias. When enabled, a 5th gate is added: a trade can only fire in the direction of the prevailing trend, so the EA never trades against it.</div>
+          </div>
+
+          <div class="row" id="trendFilterParamsRow" style="display:none;">
+            <div class="field">
+              <label id="trendEmaLenLabel">EMA period</label>
+              <div class="num-field"><input type="number" id="trendEmaLenInput" value="50" min="5" step="1"></div>
+            </div>
+            <div class="field" id="trendEmaFastWrap" style="display:none;">
+              <label>Fast EMA period</label>
+              <div class="num-field"><input type="number" id="trendEmaFastInput" value="20" min="2" step="1"></div>
+            </div>
+          </div>
+
           <div class="row">
             <div class="field">
               <label>Stake per trade (USD)</label>
@@ -1222,6 +1243,9 @@
   const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection");
   const autoToggle = $("autoToggle");
   const reverseModeToggle = $("reverseModeToggle");
+  const trendFilterSelect = $("trendFilterSelect"), trendFilterHint = $("trendFilterHint");
+  const trendFilterParamsRow = $("trendFilterParamsRow"), trendEmaLenLabel = $("trendEmaLenLabel");
+  const trendEmaLenInput = $("trendEmaLenInput"), trendEmaFastWrap = $("trendEmaFastWrap"), trendEmaFastInput = $("trendEmaFastInput");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
   const mmTargetProfitInput = $("mmTargetProfitInput");
@@ -1259,6 +1283,14 @@
     profitTarget: 0,
     autoTrade: false,
     reverseMode: false,
+
+    // Trend filter (Gate 5) — "off" reproduces the ORIGINAL 4-gate Ben
+    // Sniper behavior exactly, unchanged. "single" and "dual" add a 5th
+    // AND-gate to computeSignal (see SNIPER config + computeTrendDir)
+    // that only lets a signal fire in the direction of the prevailing
+    // trend. Defaults to "off" so existing behavior is untouched unless
+    // the user explicitly turns it on.
+    trendFilterMode: "off", // "off" | "single" | "dual"
 
     dualMode: false,
     token2: "",
@@ -1415,7 +1447,14 @@
     macdFast: 12,
     macdSlow: 26,
     macdSignal: 9,
-    macdMinSeparation: 0.00003 // min gap between MACD/signal line, scaled by price step, before "separating" counts
+    macdMinSeparation: 0.00003, // min gap between MACD/signal line, scaled by price step, before "separating" counts
+
+    // ---- Trend filter (Gate 5) — OFF by default, does not change the
+    // original strategy's behavior unless the user explicitly enables it.
+    trendEmaLen: 50,      // Single-EMA mode: the one EMA price/slope is checked against
+    trendSlopeLookback: 10, // Single-EMA mode: bars back used to read the EMA's own slope
+    trendEmaFast: 20,     // Dual-EMA mode: fast EMA period
+    trendEmaSlow: 50      // Dual-EMA mode: slow EMA period (reuses trendEmaLen's default value)
   };
 
   // Analysis timeframe: "tick" = raw tick-by-tick, or a number of seconds
@@ -2578,7 +2617,14 @@
   // checking raw tick count regardless of mode.
   function instHasEnoughBars(inst){
     const bars = currentTimeframe === "tick" ? inst.ticks : (inst.candles || []);
-    return bars.length >= 40;
+    let minBars = 40;
+    const mode = cfg.trendFilterMode || "off";
+    if(mode === "single"){
+      minBars = Math.max(minBars, (SNIPER.trendEmaLen|0) + (SNIPER.trendSlopeLookback|0) + 1);
+    } else if(mode === "dual"){
+      minBars = Math.max(minBars, Math.max(SNIPER.trendEmaFast|0, SNIPER.trendEmaSlow|0) + 1);
+    }
+    return bars.length >= minBars;
   }
 
   function computeSignal(inst){
@@ -2587,7 +2633,17 @@
     // Real candle history from Deriv arrives in one shot (CANDLE_HISTORY_COUNT
     // bars), so candle mode can demand the same full window as tick mode —
     // there's no more guesswork about whether enough history was captured.
-    const MIN_BARS = 40;
+    // When a trend filter is enabled, its EMA(s) need their own warm-up
+    // window too — MIN_BARS scales up so the trend gate is genuinely
+    // ready (not silently defaulting to trendDir=0/blocked) by the time
+    // any signal is allowed to fire, exactly like the other 4 gates.
+    const activeTrendMode = cfg.trendFilterMode || "off";
+    let MIN_BARS = 40;
+    if(activeTrendMode === "single"){
+      MIN_BARS = Math.max(MIN_BARS, (SNIPER.trendEmaLen|0) + (SNIPER.trendSlopeLookback|0) + 1);
+    } else if(activeTrendMode === "dual"){
+      MIN_BARS = Math.max(MIN_BARS, Math.max(SNIPER.trendEmaFast|0, SNIPER.trendEmaSlow|0) + 1);
+    }
     if(bars.length < MIN_BARS){
       const tickCount = timeframe === "tick" ? inst.ticks.length : (inst.candles ? inst.candles.length : 0);
       return { ready:false, tickCount, barCount: bars.length, minBars: MIN_BARS };
@@ -2694,6 +2750,16 @@
     // a new epoch.
     const setupId = crossEpoch != null ? (crossDir + ":" + crossEpoch) : null;
 
+    // 5) TREND FILTER — optional 5th gate (see computeTrendDir above).
+    // cfg.trendFilterMode === "off" reproduces the ORIGINAL strategy
+    // exactly: trendDir stays 0 and is simply never checked below, so
+    // gate5Trend is forced to "always pass" rather than "always block".
+    const trendFilterMode = cfg.trendFilterMode || "off";
+    const trendResult = trendFilterMode === "off"
+      ? { trendDir: 0, ready: true }
+      : computeTrendDir(closes, trendFilterMode);
+    const trendDir = trendResult.trendDir;
+
     // ── Combine: EVERY gate below must independently hold in the SAME
     // direction for a signal to exist at all. This is a strict AND, not a
     // weighted vote — there is no partial credit, and no gate can be
@@ -2721,21 +2787,28 @@
       const gate2Cci = ccisOk && cciTurnDir === candidateDir;
       const gate3Stoch = stochInOcean && stochTurnDir === candidateDir;
       const gate4Macd = macdTriggerDir === candidateDir;
+      // Gate 5 only exists when a trend filter mode is enabled. With
+      // trendFilterMode === "off", trendDir is forced to 0 above and this
+      // gate is hard-wired to true — meaning it can never block a trade,
+      // exactly reproducing the original 4-gate-only behavior.
+      const gate5Trend = trendFilterMode === "off" ? true : (trendDir === candidateDir);
 
-      const allGatesPass = gate1Momentum && gate2Cci && gate3Stoch && gate4Macd;
+      const allGatesPass = gate1Momentum && gate2Cci && gate3Stoch && gate4Macd && gate5Trend;
       dir = allGatesPass ? candidateDir : 0;
 
-      // Score reflects how many of the 4 gates currently agree, purely for
-      // the on-panel readout/percentage display — it plays NO role in
-      // whether dir fires. A signal either has all 4 gates (dir !== 0,
-      // score = 100%) or it does not exist (dir = 0), regardless of score.
+      // Score reflects how many gates currently agree, purely for the
+      // on-panel readout/percentage display — it plays NO role in whether
+      // dir fires. Denominator adapts to whether the trend gate is active
+      // so the percentage still reads as "all gates passing" = 100%.
+      const gateCount = trendFilterMode === "off" ? 4 : 5;
       let gatesPassing = 0;
       if(gate1Momentum) gatesPassing++;
       if(gate2Cci) gatesPassing++;
       if(gate3Stoch) gatesPassing++;
       if(gate4Macd) gatesPassing++;
       else if(macdWaitingDir === candidateDir) gatesPassing += 0.5; // "crossed, waiting to separate" shown as partial credit on the readout only
-      score = gatesPassing / 4;
+      if(trendFilterMode !== "off" && gate5Trend) gatesPassing++;
+      score = gatesPassing / gateCount;
     }
 
     score = Math.max(0, Math.min(1, score));
@@ -2759,7 +2832,8 @@
       momentumDir, momentumLabel,
       cci: { value: cciNow, inOcean: cciInOcean, approaching: cciApproachingOcean, turnDir: cciTurnDir },
       stochRsi: { k: kNow, d: dNow, inOcean: stochInOcean, turnDir: stochTurnDir },
-      macd: { histogram: hNow, crossedUp, crossedDown, separating, triggerDir: macdTriggerDir, waitingDir: macdWaitingDir }
+      macd: { histogram: hNow, crossedUp, crossedDown, separating, triggerDir: macdTriggerDir, waitingDir: macdWaitingDir },
+      trend: { mode: trendFilterMode, dir: trendDir, ready: trendResult.ready !== false, detail: trendResult }
     };
   }
 
@@ -2853,6 +2927,49 @@
     return { macdLine, signalLine, histogram };
   }
 
+  // ---- trend filter (Gate 5) -----------------------------------------
+  // Reuses computeEmaSeries (already used for MACD) — no new indicator
+  // primitive needed. Two selectable modes:
+  //
+  //   "single" — one EMA (SNIPER.trendEmaLen). Trend is UP only when
+  //              price is ABOVE the EMA *and* the EMA itself is rising
+  //              (compared to trendSlopeLookback bars ago); DOWN only
+  //              when price is below AND the EMA is falling. Anything
+  //              else (price/EMA disagree, or EMA is flat) = no trend.
+  //
+  //   "dual"   — fast EMA (trendEmaFast) vs slow EMA (trendEmaSlow).
+  //              Trend is UP when fast > slow, DOWN when fast < slow.
+  //              Classic EMA-cross trend read; no slope check needed
+  //              since the cross itself encodes direction.
+  //
+  // mode "off" is handled by the caller (computeSignal) — this function
+  // is only invoked at all when a filter mode is actually enabled.
+  function computeTrendDir(closes, mode){
+    if(mode === "dual"){
+      const fastLen = Math.max(2, SNIPER.trendEmaFast|0);
+      const slowLen = Math.max(fastLen + 1, SNIPER.trendEmaSlow|0);
+      if(closes.length < slowLen + 1) return { trendDir: 0, ready:false };
+      const fastEma = computeEmaSeries(closes, fastLen);
+      const slowEma = computeEmaSeries(closes, slowLen);
+      const fNow = fastEma[fastEma.length - 1];
+      const sNow = slowEma[slowEma.length - 1];
+      const trendDir = fNow > sNow ? 1 : fNow < sNow ? -1 : 0;
+      return { trendDir, ready:true, fastEma: fNow, slowEma: sNow };
+    }
+    // "single"
+    const len = Math.max(2, SNIPER.trendEmaLen|0);
+    const lookback = Math.max(1, SNIPER.trendSlopeLookback|0);
+    if(closes.length < len + lookback) return { trendDir: 0, ready:false };
+    const ema = computeEmaSeries(closes, len);
+    const emaNow = ema[ema.length - 1];
+    const emaPrev = ema[ema.length - 1 - lookback];
+    const priceNow = closes[closes.length - 1];
+    let trendDir = 0;
+    if(priceNow > emaNow && emaNow > emaPrev) trendDir = 1;
+    else if(priceNow < emaNow && emaNow < emaPrev) trendDir = -1;
+    return { trendDir, ready:true, ema: emaNow, emaPrev };
+  }
+
   function evaluateSignalForInstance(inst){
     const sig = computeSignal(inst);
     inst.lastSignal = sig.ready ? { level: sig.level, dir: sig.dir, score: sig.score } : null;
@@ -2905,8 +3022,15 @@
   // the Ben Sniper engine above for the shape of sig.cci / sig.stochRsi /
   // sig.macd.
   function renderFactors(sig){
-    fMomentum.textContent = sig.momentumLabel;
-    fMomentum.className = "factor-val " + (sig.momentumDir>0?"pos":sig.momentumDir<0?"neg":"neu");
+    const tr = sig.trend;
+    if(tr && tr.mode !== "off"){
+      const trLabel = tr.dir > 0 ? "trend up" : tr.dir < 0 ? "trend down" : "no trend";
+      fMomentum.textContent = sig.momentumLabel + " · " + trLabel;
+      fMomentum.className = "factor-val " + (tr.dir>0?"pos":tr.dir<0?"neg":"neu");
+    } else {
+      fMomentum.textContent = sig.momentumLabel;
+      fMomentum.className = "factor-val " + (sig.momentumDir>0?"pos":sig.momentumDir<0?"neg":"neu");
+    }
 
     const cci = sig.cci;
     fVelocity.textContent = Math.round(cci.value) + (cci.inOcean ? " · in ocean" : cci.approaching ? " · nearing ocean" : " · outside");
@@ -4106,6 +4230,10 @@
         mmLoginReverseMode: cfg.mmLoginReverseMode,
         autoClearLogEnabled: autoClearLogToggle.checked,
         reverseMode: cfg.reverseMode,
+        trendFilterMode: cfg.trendFilterMode,
+        trendEmaLen: SNIPER.trendEmaLen,
+        trendEmaFast: SNIPER.trendEmaFast,
+        trendEmaSlow: SNIPER.trendEmaSlow,
         timeframe: currentTimeframe
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -4168,6 +4296,16 @@
       cfg.reverseMode = !!data.reverseMode;
       reverseModeToggle.checked = cfg.reverseMode;
     }
+    if(data.trendFilterMode != null && ["off","single","dual"].includes(data.trendFilterMode)){
+      cfg.trendFilterMode = data.trendFilterMode;
+      trendFilterSelect.value = cfg.trendFilterMode;
+    }
+    if(data.trendEmaLen != null) SNIPER.trendEmaLen = Math.max(5, parseInt(data.trendEmaLen,10) || 50);
+    if(data.trendEmaFast != null) SNIPER.trendEmaFast = Math.max(2, parseInt(data.trendEmaFast,10) || 20);
+    if(data.trendEmaSlow != null) SNIPER.trendEmaSlow = Math.max(5, parseInt(data.trendEmaSlow,10) || 50);
+    trendEmaLenInput.value = trendFilterSelect.value === "dual" ? SNIPER.trendEmaSlow : SNIPER.trendEmaLen;
+    trendEmaFastInput.value = SNIPER.trendEmaFast;
+    updateTrendFilterUi();
 
     if(data.token2){ token2Input.value = data.token2; cfg.token2 = sanitizeToken(data.token2); updateToken2LenHint(); }
     if(data.login1LossLimit != null){ login1LossInput.value = data.login1LossLimit; cfg.login1LossLimit = data.login1LossLimit; }
@@ -4454,6 +4592,47 @@
     savePersisted();
   });
 
+  // Shows/hides the EMA period field(s) and updates the hint text to match
+  // whichever trend filter mode is selected — purely a UI-sync helper,
+  // does not itself change cfg.
+  function updateTrendFilterUi(){
+    const mode = trendFilterSelect.value;
+    if(mode === "off"){
+      trendFilterParamsRow.style.display = "none";
+      trendFilterHint.textContent = "Off: signals fire exactly as originally specified — Momentum, CCI, Stoch RSI and MACD only, no trend bias. When enabled, a 5th gate is added: a trade can only fire in the direction of the prevailing trend, so the EA never trades against it.";
+    } else if(mode === "single"){
+      trendFilterParamsRow.style.display = "flex";
+      trendEmaLenLabel.textContent = "EMA period";
+      trendEmaFastWrap.style.display = "none";
+      trendFilterHint.textContent = "Single EMA: a trade only fires when price is on the trend side of the EMA AND the EMA itself is sloping that way. Blocks counter-trend signals from the original 4-gate engine; does not change how those 4 gates work.";
+    } else if(mode === "dual"){
+      trendFilterParamsRow.style.display = "flex";
+      trendEmaLenLabel.textContent = "Slow EMA period";
+      trendEmaFastWrap.style.display = "";
+      trendFilterHint.textContent = "Dual EMA: a trade only fires when the fast EMA is above the slow EMA (uptrend) for a Rise signal, or below it (downtrend) for a Fall signal. Does not change how the original 4 gates work.";
+    }
+  }
+
+  trendFilterSelect.addEventListener("change", function(){
+    cfg.trendFilterMode = this.value; // "off" | "single" | "dual"
+    updateTrendFilterUi();
+    logSystemNote("Trend filter set to " + (this.value === "off" ? "OFF — original 4-gate mode." : this.value === "single" ? "SINGLE EMA — trades gated to the EMA trend direction." : "DUAL EMA — trades gated to the fast/slow EMA cross direction."));
+    savePersisted();
+  });
+  trendEmaLenInput.addEventListener("change", function(){
+    const v = Math.max(5, parseInt(this.value,10) || 50);
+    this.value = v;
+    if(trendFilterSelect.value === "dual") SNIPER.trendEmaSlow = v;
+    else SNIPER.trendEmaLen = v;
+    savePersisted();
+  });
+  trendEmaFastInput.addEventListener("change", function(){
+    const v = Math.max(2, parseInt(this.value,10) || 20);
+    this.value = v;
+    SNIPER.trendEmaFast = v;
+    savePersisted();
+  });
+
   autoToggle.addEventListener("change", function(){
     cfg.autoTrade = this.checked;
     if(this.checked){
@@ -4605,6 +4784,7 @@
   mmRenderMarketChecklist();
   mmUpdateStartBtn();
   updateDurationHint();
+  updateTrendFilterUi();
   setInterval(checkDualModeHeartbeat, 5000);
 
   // Refreshes every multi-market card once a second while a scan is running.
