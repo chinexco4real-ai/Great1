@@ -231,6 +231,8 @@
   .field-disabled{ opacity:0.55; }
   .field-disabled .seg{ pointer-events:none; }
   .field-disabled label::after{ content:" (off — multi-market level mode handles this)"; font-weight:400; color:var(--ink-faint); font-size:10px; }
+  .field-inactive{ opacity:0.45; }
+  .field-inactive input{ pointer-events:none; }
 
   .seg{
     display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden;
@@ -342,6 +344,10 @@
     animation:pulse 1.4s infinite;
   }
   .mm-badge.show{ display:inline-block; }
+  .mm-badge.idle{
+    color:var(--ink-dim); border-color:var(--line); background:var(--panel-2);
+    animation:none;
+  }
   .mm-markets{ display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 4px; }
   .mm-chk{
     display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:6px;
@@ -665,18 +671,25 @@
             </label>
           </div>
           <div id="mmBody">
-            <div class="field-hint">Select one or more markets to scan. Auto-trading, stake, duration, strength and cooldown settings above are shared rules applied to all selected markets. The <b>Daily loss limit</b> and <b>Daily profit target</b> fields above apply to the primary "Market" panel only — multi-market instances use the two dedicated targets below instead, so the two systems never compete over the same market. If dual-login auto-switch is also on, each market independently tracks its own condition 1 / condition 2 counters and switches to Login 2 on its own — see the note below.</div>
+            <div class="field-hint">Select one or more markets to scan. Auto-trading, stake, duration, strength and cooldown settings above are shared rules applied to all selected markets. The <b>Daily loss limit</b> and <b>Daily profit target</b> fields above apply to the primary "Market" panel only — multi-market instances use the dedicated targets below instead, so the two systems never compete over the same market. When <b>dual login auto-switch</b> is off, every selected market simply trades straight on Login 1 at multi-market level — no conditions, no switch, nothing to configure beyond the target below. Turn dual-login auto-switch on if you also want each market to independently track its own condition 1 / condition 2 counters and switch to Login 2 — see the note below.</div>
             <div class="row" style="margin-top:10px;">
-              <div class="field">
-                <label>Reset target profit per market (USD) <b style="font-weight:400; color:var(--ink-faint);">— Login 1 only</b></label>
-                <div class="num-field"><input type="number" id="mmResetTargetProfitInput" value="0" min="0" step="1"></div>
+              <div class="field" id="mmLogin1TargetField">
+                <label>Login 1 target profit per market (USD) <b style="font-weight:400; color:var(--ink-faint);" id="mmLogin1TargetBadge">— active now</b></label>
+                <div class="num-field"><input type="number" id="mmLogin1TargetProfitInput" value="0" min="0" step="1"></div>
               </div>
-              <div class="field">
-                <label>Closing target profit per market (USD) <b style="font-weight:400; color:var(--ink-faint);">— Login 2 only</b></label>
+              <div class="field" id="mmLogin2TargetField">
+                <label>Login 2 target profit per market (USD) <b style="font-weight:400; color:var(--ink-faint);" id="mmLogin2TargetBadge">— needs dual-login on</b></label>
                 <div class="num-field"><input type="number" id="mmTargetProfitInput" value="0" min="0" step="1"></div>
               </div>
             </div>
-            <div class="field-hint" style="margin-top:-8px;">Both are universal values applied to every market in the scan, and each only ever applies while that market is on its own stated login — a market is never on both logins at once, so the two never conflict. <b>Reset target (Login 1):</b> the moment a market's own net P&amp;L reaches this amount while it's on Login 1, that market's stats snap back to 0 and it keeps trading. <b>Closing target (Login 2):</b> the moment a market's own net P&amp;L reaches this amount while it's on Login 2, that market closes out and is disabled — it stops trading and drops out of the scan, while every other market keeps running independently until it reaches its own target. Once every selected market has closed out, the scan stops itself. Set either to 0 to disable it.</div>
+            <div class="field-hint" style="margin-top:-8px;">Both are universal values applied to every market in the scan, checked against that market's own net P&amp;L only. Only one is ever active at a time, so they never conflict: <b>Login 1 target</b> is the one that runs while dual-login auto-switch is off (login-1-only mode) — the moment a market's own net P&amp;L reaches this amount, that market closes out and is disabled. <b>Login 2 target</b> only ever runs once a market has switched to Login 2 under dual-login auto-switch, checked against its accumulated Login 2 P&amp;L across every Login 2 leg. Whichever one is inactive is greyed out below and simply doesn't run. It stops trading and drops out of the scan, while every other market keeps running independently until it reaches its own target — once every selected market has closed out, the scan stops itself. Set either to 0 to disable it.</div>
+            <div class="row" id="mmResetTargetRow" style="display:none;">
+              <div class="field">
+                <label>Reset target profit per market (USD) <b style="font-weight:400; color:var(--ink-faint);">— Login 1 only, optional</b></label>
+                <div class="num-field"><input type="number" id="mmResetTargetProfitInput" value="0" min="0" step="1"></div>
+                <div class="field-hint">Optional extra, only shown in dual mode: instead of closing the market out, snaps its stats back to 0 and keeps it trading the moment its net P&amp;L reaches this amount on Login 1. Set to 0 to disable.</div>
+              </div>
+            </div>
             <div class="mm-markets" id="mmMarketsRow"></div>
             <div class="mm-conflict" id="mmConflictNote">Dual-login is active — each market in this scan switches to Login 2 independently, the moment its OWN condition 1 or condition 2 is met (not combined with any other market's count). Each market then runs its own Login 2 profit target and timer, and banks its own vault snapshot when that leg ends, all without affecting any other market. A market only waits for its own open trade to settle before switching — other markets are never held up by it.</div>
 
@@ -691,22 +704,51 @@
               </label>
             </div>
 
-            <div class="toggle-row" id="mmLevelRow" style="display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--line-soft);">
-              <div>
-                <div class="toggle-label">Login 1 → Login 2 level mode</div>
-                <div class="toggle-sub">Per-market, not global: while this is on, every selected market only auto-trades <b>Low+</b> signals for as long as it's on Login 1, and automatically requires <b>Medium+</b> the moment it switches to Login 2 — independently, based on each market's own current login, not a shared switch. One market can be on Login 1 (trading Low+) while another is already on Login 2 (trading Medium+) at the same time. The main <b>Minimum signal strength</b> selector below is disabled while this is on, since it isn't needed here — each market's required strength is driven entirely by its own login state instead. This runs independently of reverse mode above — the two control different things (strength threshold vs. direction) and can be on together.</div>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="mmLoginLevelToggle">
-                <span class="slider"></span>
-              </label>
-            </div>
-
             <div class="mm-btnrow">
               <button class="btn btn-primary" id="mmStartBtn" type="button" disabled style="width:auto; padding:10px 18px;">▶ Start multi-market scan</button>
               <button class="btn btn-danger-ghost" id="mmStopBtn" type="button" style="width:auto; padding:10px 18px; display:none;">■ Stop scan</button>
             </div>
             <div class="mm-cards" id="mmCards"></div>
+          </div>
+        </div>
+
+        <div class="panel" id="mmAccumPanel" style="display:none;">
+          <div class="panel-head">
+            <div class="panel-title">Accumulator P/L <b style="font-weight:400; color:var(--ink-faint);">— combined live total across every selected market, Login 1 only</b></div>
+            <span class="mm-badge show" id="mmAccumBadge">● LOGIN 1 ONLY</span>
+          </div>
+          <div class="vault-summary">
+            <div>
+              <div class="vault-total-lbl">Accumulated P/L</div>
+              <div class="vault-total-num" id="mmAccumTotal">+0.00 USD</div>
+            </div>
+            <div class="vault-count" id="mmAccumMarketsCount">0 markets</div>
+          </div>
+          <div class="field" style="margin-top:12px;">
+            <label>Accumulator target profit (USD)</label>
+            <div class="num-field"><input type="number" id="mmAccumTargetInput" value="0" min="0" step="1"></div>
+            <div class="field-hint">Sums the live net P&amp;L of every currently selected multi-market symbol (updated every second) into one running total. Set to 0 to disable. <b>Only active while dual-login auto-switch is off</b> (login-1-only mode) — in dual mode this accumulator is paused since markets may be trading on either login.</div>
+            <div class="field-hint" id="mmAccumTargetStatus" style="display:none;"></div>
+          </div>
+
+          <div class="toggle-row" style="margin-top:6px;">
+            <div>
+              <div class="toggle-label">Pause instead of disable</div>
+              <div class="toggle-sub">When the target is reached: instead of switching auto-trading off for good, snapshot the current accumulated total into the log below, reset every selected market's stats back to 0, and pause auto-trading for the countdown below. Auto-trading then resumes on its own once the countdown elapses. Leave off to keep the original behaviour — target reached simply switches auto-trading off, with no reset and no auto-resume.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="mmAccumPauseModeToggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="field" id="mmAccumPauseMinutesWrap" style="display:none; margin-top:10px;">
+            <label>Pause duration (minutes)</label>
+            <div class="num-field"><input type="number" id="mmAccumPauseMinutesInput" value="15" min="1" step="1"></div>
+            <div class="field-hint" id="mmAccumPauseStatus" style="display:none;"></div>
+          </div>
+
+          <div class="vault-grid" id="mmAccumSnapGrid" style="display:none;">
+            <div class="log-empty">No snapshots yet — the log fills every time the accumulator target is reached in pause mode.</div>
           </div>
         </div>
 
@@ -723,7 +765,7 @@
           </div>
         </div>
 
-        <div class="panel">
+        <div class="panel" id="vaultPanel" style="display:none;">
           <div class="panel-head">
             <div class="panel-title">Snapshot vault <b style="font-weight:400; color:var(--ink-faint);">— Login 2 legs, banked automatically</b></div>
             <button class="btn-reset-session" id="vaultClearBtn" type="button">Clear vault</button>
@@ -775,25 +817,6 @@
               <input type="checkbox" id="reverseModeToggle">
               <span class="slider"></span>
             </label>
-          </div>
-
-          <div class="field" id="strengthField">
-            <label>Minimum signal strength to trade</label>
-            <div class="seg" id="strengthSeg">
-              <button data-v="low">Low+</button>
-              <button data-v="medium" class="active">Medium+</button>
-              <button data-v="high">High only</button>
-            </div>
-            <div class="field-hint">Only signals at or above this strength will trigger an auto-trade.</div>
-          </div>
-
-          <div class="field">
-            <label>Minimum signal strength percentage</label>
-            <div class="num-field">
-              <input type="number" id="minScorePctInput" value="0" min="0" max="100" step="1">
-              <span style="color:var(--ink-faint); font-size:13px; flex-shrink:0;">%</span>
-            </div>
-            <div class="field-hint">Extra floor on top of the level selector above — applies to Medium and High signals only. Blocks any Medium or High trade whose signal score is below this percentage; the score must be equal to or above what's set here. Low signals are exempt and are never affected by this. Set to 0 to disable.</div>
           </div>
 
           <div class="row">
@@ -1184,6 +1207,11 @@
   const loginOneBadge = $("loginOneBadge");
   const vaultTotalEl = $("vaultTotal"), vaultCountEl = $("vaultCount"), vaultGrid = $("vaultGrid");
   const vaultTargetProfitInput = $("vaultTargetProfitInput"), vaultTargetStatus = $("vaultTargetStatus");
+  const mmAccumPanel = $("mmAccumPanel"), mmAccumTotal = $("mmAccumTotal"), mmAccumMarketsCount = $("mmAccumMarketsCount");
+  const mmAccumTargetInput = $("mmAccumTargetInput"), mmAccumTargetStatus = $("mmAccumTargetStatus"), mmAccumBadge = $("mmAccumBadge");
+  const mmAccumPauseModeToggle = $("mmAccumPauseModeToggle"), mmAccumPauseMinutesWrap = $("mmAccumPauseMinutesWrap");
+  const mmAccumPauseMinutesInput = $("mmAccumPauseMinutesInput"), mmAccumPauseStatus = $("mmAccumPauseStatus");
+  const mmAccumSnapGrid = $("mmAccumSnapGrid");
   const vaultClearBtn = $("vaultClearBtn");
 
   const symbolSelect = $("symbolSelect");
@@ -1192,13 +1220,17 @@
   const tapeEl = $("tape");
   const sigLevelLabel = $("sigLevelLabel"), sigDir = $("sigDir"), sigConf = $("sigConf"), confFill = $("confFill");
   const fMomentum = $("fMomentum"), fVelocity = $("fVelocity"), fStructure = $("fStructure"), fRejection = $("fRejection");
-  const autoToggle = $("autoToggle"), strengthSeg = $("strengthSeg");
-  const minScorePctInput = $("minScorePctInput");
+  const autoToggle = $("autoToggle");
   const reverseModeToggle = $("reverseModeToggle");
   const stakeInput = $("stakeInput"), durationValueInput = $("durationValueInput"), durationUnitSelect = $("durationUnitSelect"), durationHint = $("durationHint"), cooldownSelect = $("cooldownSelect");
   const lossLimitInput = $("lossLimitInput"), profitTargetInput = $("profitTargetInput");
   const mmTargetProfitInput = $("mmTargetProfitInput");
+  const mmLogin1TargetProfitInput = $("mmLogin1TargetProfitInput");
+  const mmLogin1TargetBadge = $("mmLogin1TargetBadge"), mmLogin2TargetBadge = $("mmLogin2TargetBadge");
+  const mmLogin1TargetField = $("mmLogin1TargetField"), mmLogin2TargetField = $("mmLogin2TargetField");
+  const mmResetTargetRow = $("mmResetTargetRow");
   const mmResetTargetProfitInput = $("mmResetTargetProfitInput");
+  const vaultPanel = $("vaultPanel");
   const statTotal = $("statTotal"), statWon = $("statWon"), statLost = $("statLost"), statPnl = $("statPnl");
   const resetSessionBtn = $("resetSessionBtn");
   const tradeLog = $("tradeLog");
@@ -1207,8 +1239,6 @@
   const mmEnabledToggle = $("mmEnabledToggle"), mmBadge = $("mmBadge"), mmMarketsRow = $("mmMarketsRow");
   const mmConflictNote = $("mmConflictNote"), mmStartBtn = $("mmStartBtn"), mmStopBtn = $("mmStopBtn"), mmCards = $("mmCards");
   const mmReverseRow = $("mmReverseRow"), mmLoginReverseToggle = $("mmLoginReverseToggle");
-  const mmLevelRow = $("mmLevelRow"), mmLoginLevelToggle = $("mmLoginLevelToggle");
-  const strengthField = $("strengthField");
 
   /* ===================== SHARED CONFIG =====================
      These are settings the user configures ONCE and which apply as the
@@ -1220,12 +1250,6 @@
      profit and timer closes individually." */
   const cfg = {
     appId: APP_ID,
-    minStrength: "medium",
-    // Minimum signal strength PERCENTAGE floor (0-100). 0 = off. See the
-    // full explanation at its check in maybeAutoTradeInstance — this is an
-    // independent, additional gate on top of minStrength/level mode above,
-    // not a replacement for either of them.
-    minScorePct: 0,
     stake: 1,
     durationValue: 5,
     durationUnit: "t",
@@ -1247,17 +1271,29 @@
     login2TimerEnabled: false,
     login2TimerMinutes: 15,
 
-    // Universal closing target profit — one value applied to every market
-    // in a multi-market scan. Each market tracks it against its OWN net
-    // P&L only; hitting it closes out and disables just that one market
-    // while every other selected market keeps running independently.
-    // Applies ONLY while that market is on Login 1 (see mmTargetProfit
-    // below for the Login-2-only closing target — the two never overlap
-    // since a market is only ever on one login at a time).
+    // Universal CLOSING target profit for LOGIN 1 — one value applied to
+    // every market in a multi-market scan. Each market tracks it against
+    // its OWN net P&L only; hitting it closes out and disables just that
+    // one market while every other selected market keeps running
+    // independently. This is the target that's ACTIVE while dual-login
+    // auto-switch is OFF (login-1-only mode) — see mmTargetProfit below
+    // for the Login-2 equivalent, active only in dual mode. Only one of
+    // the two ever runs at a time (see the isLogin1TargetActive /
+    // isLogin2TargetActive helpers), so they never conflict.
+    mmLogin1TargetProfit: 0,
+
+    // Optional Login-1-only RESET target profit — one value applied to
+    // every market in a multi-market scan, only relevant/shown once dual
+    // mode is on. The moment a market's own net P&L reaches this amount
+    // while it's on Login 1, its stats snap back to 0 and it keeps
+    // trading (rather than closing out, which is what mmLogin1TargetProfit
+    // does). Purely optional — leave at 0 to skip it entirely.
     mmResetTargetProfit: 0,
 
-    // Universal CLOSING target profit — one value applied to every market
-    // in a multi-market scan. Applies ONLY while that market is on Login 2.
+    // Universal CLOSING target profit for LOGIN 2 — one value applied to
+    // every market in a multi-market scan. Applies ONLY while that market
+    // is on Login 2, which only ever happens when dual-login auto-switch
+    // is on. Disabled entirely in login-1-only mode.
     mmTargetProfit: 0,
 
     // Total vault target profit (USD/account currency, NOT a percentage).
@@ -1271,6 +1307,39 @@
     // latch that stops it re-firing on every subsequent snapshot.
     vaultTargetProfit: 0,
 
+    // Accumulator target profit (USD/account currency, NOT a percentage).
+    // Checked every second (see the mmAccum refresh interval near the
+    // bottom of this file) against the LIVE combined net P&L of every
+    // currently selected multi-market symbol — i.e. the sum of each
+    // instance's inst.dailyPnl right now, not a banked/snapshot total like
+    // the vault. Only meaningful in login-1-only mode (dual-login
+    // auto-switch off): see isLogin1TargetActive(), reused here as-is,
+    // since in dual mode markets can be on either login and a single
+    // combined figure would be misleading. 0 means "off". Hitting it
+    // disables auto-trading (cfg.autoTrade) — same as the vault target —
+    // it does not halt any individual market or stop the scan. See
+    // mmAccumPauseMode below for the alternate "pause + auto-resume"
+    // behaviour instead of a permanent disable.
+    mmAccumTargetProfit: 0,
+
+    // When true, reaching the accumulator target does NOT just disable
+    // auto-trading for good. Instead: the current total is snapshotted
+    // into the accumulator's own log (see mmAccum.snapBoxes / snapshotAccumTotal),
+    // every selected market's stats are reset back to 0 (resetInstanceSession),
+    // and auto-trading is paused for mmAccumPauseMinutes — resuming on its
+    // own once the countdown elapses, at which point the target latch is
+    // re-armed so it can fire again on the next cycle. When false, the
+    // original one-shot "disable only, stay off until turned back on
+    // manually" behaviour is used instead.
+    mmAccumPauseMode: false,
+
+    // Length of the auto-trade pause, in minutes, used only while
+    // mmAccumPauseMode is on. Must be a positive whole number — anything
+    // <= 0 is treated as invalid and the pause is skipped (falls back to
+    // the plain disable behaviour for that one trip, same as if pause
+    // mode were off, so the EA never silently hangs paused forever).
+    mmAccumPauseMinutes: 15,
+
     // Multi-market "Login 1 → Login 2 reverse mode". When on, each market
     // in the scan decides its OWN execution direction purely from its OWN
     // current activeLogin: normal direction while on Login 1, reversed
@@ -1280,18 +1349,6 @@
     // the main toggle while this is on) so there is never a case where both
     // try to flip the same trade.
     mmLoginReverseMode: false,
-
-    // Multi-market "Login 1 → Login 2 level mode". When on, each market in
-    // the scan decides its OWN minimum signal strength to trade purely from
-    // its OWN current activeLogin: Low+ while on Login 1, Medium+ while on
-    // Login 2. This is intentionally separate from cfg.minStrength (the main
-    // minimum-strength selector) — the main selector is disabled while this
-    // is on (see mmLoginLevelToggle handler), so there is never a case where
-    // both try to set the threshold for the same trade. Unlike reverse mode
-    // above, this is NOT mutually exclusive with mmLoginReverseMode — the two
-    // control different things (strength threshold vs. direction) and are
-    // free to run at the same time.
-    mmLoginLevelMode: false,
 
     vaultCap: 50
   };
@@ -1309,6 +1366,36 @@
     // the vault is cleared or the target amount is changed — see
     // clearVault() and the vaultTargetProfitInput handler.
     targetHit: false
+  };
+
+  // ── Multi-market accumulator (live, login-1-only) ───────────────────
+  // Unlike the vault above (which only banks Login 2 legs on hand-back),
+  // this tracks the LIVE combined net P&L of every currently selected
+  // multi-market symbol, recomputed every second straight from each
+  // instance's inst.dailyPnl. total is purely derived/display state —
+  // never persisted itself, just recalculated on load/refresh — only
+  // targetHit (the one-shot latch, same pattern as vault.targetHit) is
+  // worth remembering across reloads.
+  const mmAccum = {
+    total: 0,
+    marketsCounted: 0,
+    targetHit: false,
+
+    // Pause-mode fields (only meaningful while cfg.mmAccumPauseMode is on).
+    // pausedUntil is an epoch-ms timestamp — 0 means "not currently
+    // paused". Persisted so a page reload mid-pause still resumes
+    // auto-trading at the right time instead of staying stuck paused.
+    pausedUntil: 0,
+
+    // Append-only log of every snapshot taken when the target is hit in
+    // pause mode — same shape/spirit as the shared snapshot vault, but
+    // kept separate so it renders inside THIS panel (which is only ever
+    // visible in login-1-only mode, exactly opposite to when the vault
+    // panel shows). [{ id, amount, markets, ts }], newest last.
+    snapBoxes: [],
+    snapTotal: 0,
+    snapNextId: 1,
+    snapCap: 50
   };
 
   // ===================== BEN SNIPER STRATEGY CONFIG =====================
@@ -1396,11 +1483,20 @@
       this.subscribed     = false;
       this.currentSignal  = null;
 
-      // Multi-market closing target profit — set once THIS market's
-      // ACCUMULATED Login 2 P&L (across every Login 2 leg it has run, not
-      // just the current leg) reaches cfg.mmTargetProfit, and it has been
-      // closed out / disabled. Never affects any other market's instance.
+      // Multi-market closing target profit (Login 2) — set once THIS
+      // market's ACCUMULATED Login 2 P&L (across every Login 2 leg it has
+      // run, not just the current leg) reaches cfg.mmTargetProfit, and it
+      // has been closed out / disabled. Never affects any other market's
+      // instance. Only ever relevant in dual mode.
       this.mmTargetHit    = false;
+
+      // Multi-market closing target profit (Login 1) — set once THIS
+      // market's net P&L on Login 1 (inst.dailyPnl, since Login 1 never
+      // splits into "legs" the way Login 2 does) reaches
+      // cfg.mmLogin1TargetProfit, and it has been closed out / disabled.
+      // This is the target that's active in login-1-only mode (dual mode
+      // off); never affects any other market's instance.
+      this.mmLogin1TargetHit = false;
 
       // Running total of THIS market's net P&L across every Login 2 leg
       // it has completed AND its current in-progress Login 2 leg. This is
@@ -1688,7 +1784,6 @@
   }
 
   /* ===================== AUTO-TRADE (per instance) ===================== */
-  const strengthRank = { none:0, low:1, medium:2, high:3 };
 
   function maybeAutoTradeInstance(inst, sig){
     if(!cfg.autoTrade) return;
@@ -1705,37 +1800,6 @@
     // setup only exists once the histogram crosses zero again — that
     // produces a different setupId and re-arms the gate.
     if(sig.setupId && inst.lastTradedSetupId === sig.setupId) return;
-
-    // Two mutually-exclusive sources decide the minimum strength required
-    // to trade, same shape as the reverse-mode decision further down:
-    //  - Multi-market "Login 1 → Login 2 level mode" (cfg.mmLoginLevelMode):
-    //    only applies to instances currently participating in a multi-market
-    //    scan, and is keyed off THIS instance's OWN activeLogin — Low+ on
-    //    Login 1, Medium+ on Login 2. Each market decides this independently
-    //    of every other market, since each tracks its own activeLogin.
-    //  - The main global minimum-strength selector (cfg.minStrength): used
-    //    for the primary single-market panel, and for multi-market instances
-    //    only when the per-login mode above is off. The UI keeps these two
-    //    from ever both being active — the main selector is disabled while
-    //    the per-login mode is on (see updateMmLevelUI).
-    const useMmLoginLevel = inst.inMultiMarketScan && cfg.mmLoginLevelMode;
-    const effectiveMinStrength = useMmLoginLevel ? (inst.activeLogin === 2 ? "medium" : "low") : cfg.minStrength;
-    if(strengthRank[sig.level] < strengthRank[effectiveMinStrength]) return;
-
-    // Minimum signal strength PERCENTAGE floor — a separate, independent
-    // gate on top of the level gate above. NOTE: since the MKOREAN rules
-    // require ALL FOUR indicator gates (Momentum/CCI/StochRSI/MACD) to
-    // align before a signal exists at all (see computeSignal), sig.level
-    // is now binary — "high" or "none" — and any real signal's score is
-    // always exactly 100%. This floor is kept for anyone who sets it above
-    // 100 as an extra safety no-op, but in practice it can never block a
-    // signal that already passed the level gate above.
-    //
-    // cfg.minScorePct is 0-100; 0 means "off" (matches lossLimit /
-    // profitTarget / mmTargetProfit's existing 0-disables convention
-    // elsewhere in this file), so nothing changes for anyone who never
-    // touches this field.
-    if(cfg.minScorePct > 0 && sig.level !== "low" && (sig.score * 100) < cfg.minScorePct) return;
 
     if(!inst.session || !inst.session.isOpen()) return;
 
@@ -1914,6 +1978,7 @@
     // pre-reset numbers with an "IN TRADE" badge, exactly like Step 100.
 
     if(inst.isPrimary) updateStats(); if(inst.inMultiMarketScan) mmUpdateCard(inst.symbol);
+    if(inst.inMultiMarketScan) updateMmAccum();
 
     // Legacy single-market daily loss limit / profit target — scoped to the
     // PRIMARY market only. Multi-market instances have their own dedicated
@@ -1929,12 +1994,13 @@
       }
     }
 
-    // Reset target profit — Login 1 ONLY, universal value (cfg.mmResetTargetProfit)
-    // checked against THIS market's own net P&L only. The instant it's reached
-    // while this market is on Login 1, its stats snap back to 0 (trades, win/
-    // loss counts, streaks, net P&L) and it keeps running/trading exactly as
-    // before — nothing is halted or disabled. Every other market is untouched.
-    if(inst.inMultiMarketScan && mmActive && inst.activeLogin === 1 && cfg.mmResetTargetProfit > 0 && inst.dailyPnl >= cfg.mmResetTargetProfit){
+    // Reset target profit — Login 1 ONLY, universal value (cfg.mmResetTargetProfit),
+    // an OPTIONAL extra only shown/used once dual mode is on. Checked against
+    // THIS market's own net P&L only. The instant it's reached while this
+    // market is on Login 1, its stats snap back to 0 (trades, win/loss counts,
+    // streaks, net P&L) and it keeps running/trading exactly as before —
+    // nothing is halted or disabled. Every other market is untouched.
+    if(inst.inMultiMarketScan && mmActive && cfg.dualMode && inst.activeLogin === 1 && cfg.mmResetTargetProfit > 0 && inst.dailyPnl >= cfg.mmResetTargetProfit){
       const resetAmount = inst.dailyPnl;
       resetInstanceSession(inst); // also clears tradeInFlight (see resetInstanceSession)
       inst.mmResetCount++;
@@ -1944,16 +2010,31 @@
       return; // stats are back to 0 for this market — nothing left to switch/close on this settlement
     }
 
-    // Closing target profit — Login 2 ONLY, universal value (cfg.mmTargetProfit)
-    // checked against THIS market's ACCUMULATED net P&L across every Login 2
-    // leg it has run (inst.mmLogin2AccumPnl), NOT just the current leg's
-    // dailyPnl. The instant the accumulated total is reached while this
-    // market is on Login 2, this one market closes out and disables itself;
-    // every other selected market keeps running on its own counters,
-    // untouched, until it reaches the same universal target in turn.
-    if(inst.inMultiMarketScan && mmActive && inst.activeLogin === 2 && !inst.mmTargetHit && cfg.mmTargetProfit > 0 && inst.mmLogin2AccumPnl >= cfg.mmTargetProfit){
+    // Closing target profit — LOGIN 1, universal value (cfg.mmLogin1TargetProfit).
+    // Active ONLY while dual-login auto-switch is OFF (login-1-only mode) —
+    // see isLogin1TargetActive(). Checked against THIS market's own net P&L
+    // (inst.dailyPnl) only. The instant it's reached, this one market closes
+    // out and disables itself; every other selected market keeps running on
+    // its own counters, untouched, until it reaches the same universal
+    // target in turn.
+    if(inst.inMultiMarketScan && mmActive && isLogin1TargetActive() && !inst.mmLogin1TargetHit && cfg.mmLogin1TargetProfit > 0 && inst.dailyPnl >= cfg.mmLogin1TargetProfit){
       inst.tradeInFlight = false;
-      closeOutMarketOnTarget(inst);
+      closeOutMarketOnTarget(inst, 1);
+      return; // this market is done
+    }
+
+    // Closing target profit — LOGIN 2, universal value (cfg.mmTargetProfit).
+    // Active ONLY while dual-login auto-switch is ON, and only once this
+    // market has switched to Login 2 — see isLogin2TargetActive(). Checked
+    // against THIS market's ACCUMULATED net P&L across every Login 2 leg it
+    // has run (inst.mmLogin2AccumPnl), NOT just the current leg's dailyPnl.
+    // The instant the accumulated total is reached while this market is on
+    // Login 2, this one market closes out and disables itself; every other
+    // selected market keeps running on its own counters, untouched, until
+    // it reaches the same universal target in turn.
+    if(inst.inMultiMarketScan && mmActive && isLogin2TargetActive() && inst.activeLogin === 2 && !inst.mmTargetHit && cfg.mmTargetProfit > 0 && inst.mmLogin2AccumPnl >= cfg.mmTargetProfit){
+      inst.tradeInFlight = false;
+      closeOutMarketOnTarget(inst, 2);
       return; // this market is done — skip dual-login switch checks for it
     }
 
@@ -1972,10 +2053,19 @@
   // a full scan stop — leaves its card in place, marked as closed, and never
   // touches any other market's instance. If every selected market has now
   // closed out, the whole scan is stopped automatically.
-  function closeOutMarketOnTarget(inst){
-    if(inst.mmTargetHit) return;
-    inst.mmTargetHit = true;
-    inst.haltReason = "Closing target profit reached (" + formatPnl(inst.mmLogin2AccumPnl) + " " + (inst.session ? inst.session.accountCurrency : "") + " accumulated across Login 2 legs)";
+  // loginNumber: which login's closing target triggered this (1 or 2) —
+  // only used to pick the right flag/message/amount; the teardown itself
+  // is identical either way.
+  function closeOutMarketOnTarget(inst, loginNumber){
+    if(loginNumber === 2){
+      if(inst.mmTargetHit) return;
+      inst.mmTargetHit = true;
+      inst.haltReason = "Closing target profit reached (" + formatPnl(inst.mmLogin2AccumPnl) + " " + (inst.session ? inst.session.accountCurrency : "") + " accumulated across Login 2 legs)";
+    } else {
+      if(inst.mmLogin1TargetHit) return;
+      inst.mmLogin1TargetHit = true;
+      inst.haltReason = "Login 1 target profit reached (" + formatPnl(inst.dailyPnl) + " " + (inst.session ? inst.session.accountCurrency : "") + ")";
+    }
     inst.tradeInFlight = false;
 
     stopLogin2TimerForInstance(inst);
@@ -1989,7 +2079,11 @@
     unsubscribeCandlesForInstance(inst);
     delete marketInstances[inst.symbol];
 
-    mmLogNote(inst.label + ": closing target profit of +" + cfg.mmTargetProfit.toFixed(2) + " reached (accumulated Login 2 net " + formatPnl(inst.mmLogin2AccumPnl) + ") — market closed and disabled. Other markets continue independently.");
+    if(loginNumber === 2){
+      mmLogNote(inst.label + ": closing target profit of +" + cfg.mmTargetProfit.toFixed(2) + " reached (accumulated Login 2 net " + formatPnl(inst.mmLogin2AccumPnl) + ") — market closed and disabled. Other markets continue independently.");
+    } else {
+      mmLogNote(inst.label + ": Login 1 target profit of +" + cfg.mmLogin1TargetProfit.toFixed(2) + " reached (net " + formatPnl(inst.dailyPnl) + ") — market closed and disabled. Other markets continue independently.");
+    }
 
     const stillRunning = mmSelectedSyms.some(function(sym){ return !!marketInstances[sym]; });
     if(mmActive && !stillRunning){
@@ -2243,6 +2337,212 @@
     vault.targetHit = false; // re-arm the target so it can fire again on the next run
     renderVault();
     savePersisted();
+  }
+
+  /* ===================== MULTI-MARKET ACCUMULATOR (live, Login 1 only) =====================
+     Recomputes the combined LIVE net P&L across every currently selected
+     multi-market symbol and, once a target > 0 is set and reached, either:
+       - disables auto-trading for good (cfg.mmAccumPauseMode off — the
+         original one-shot "disable only" behaviour), or
+       - snapshots the total, resets every selected market back to 0, and
+         pauses auto-trading for cfg.mmAccumPauseMinutes before resuming on
+         its own (cfg.mmAccumPauseMode on) — see triggerAccumPause() below.
+     Login-1-only by design — reuses isLogin1TargetActive() (true whenever
+     cfg.dualMode is off) since in dual mode a market may be sitting on
+     either login and a single summed figure would mix Login 1 and Login 2
+     money together. Called both from the once-a-second refresh loop at the
+     bottom of the file AND right after every trade settles, so the figure
+     never lags more than a second behind reality — that same 1s cadence is
+     also what drives the live pause countdown. */
+  function updateMmAccum(){
+    if(!mmAccumPanel) return;
+
+    const login1Active = isLogin1TargetActive();
+    mmAccumPanel.style.display = mmEnabled ? "" : "none";
+    if(mmAccumBadge){
+      const paused = mmAccum.pausedUntil > Date.now();
+      mmAccumBadge.textContent = !login1Active ? "● PAUSED — DUAL MODE" : paused ? "● COOLDOWN" : "● LOGIN 1 ONLY";
+      mmAccumBadge.className = "mm-badge show" + (!login1Active || paused ? " idle" : "");
+    }
+
+    // Sum each selected market's own live net P&L. Markets not yet
+    // connected/instantiated simply contribute 0 rather than being
+    // skipped, so the total always reflects "every selected market",
+    // not just the ones currently running.
+    let total = 0, counted = 0;
+    mmSelectedSyms.forEach(function(sym){
+      const inst = marketInstances[sym];
+      if(inst){ total += inst.dailyPnl; counted++; }
+    });
+    mmAccum.total = total;
+    mmAccum.marketsCounted = counted;
+
+    if(mmAccumTotal){
+      mmAccumTotal.textContent = formatPnl(total) + " " + (session1.accountCurrency || session2.accountCurrency || "USD");
+      mmAccumTotal.className = "vault-total-num " + (total > 0 ? "pos" : total < 0 ? "neg" : "");
+    }
+    if(mmAccumMarketsCount){
+      mmAccumMarketsCount.textContent = counted + " / " + mmSelectedSyms.length + " market" + (mmSelectedSyms.length===1?"":"s") + " live";
+    }
+
+    // If a countdown is currently running, this tick's only job is to keep
+    // the countdown readout live and, once time is up, resume trading —
+    // the target itself is deliberately NOT re-checked while paused, since
+    // every market was just reset to 0 and cfg.autoTrade is already off.
+    if(mmAccum.pausedUntil > 0){
+      const remainingMs = mmAccum.pausedUntil - Date.now();
+      if(remainingMs <= 0){
+        resumeAfterAccumPause();
+      } else if(mmAccumPauseStatus){
+        const mins = Math.floor(remainingMs / 60000);
+        const secs = Math.floor((remainingMs % 60000) / 1000);
+        mmAccumPauseStatus.style.display = "";
+        mmAccumPauseStatus.innerHTML = "<b style=\"color:var(--amber);\">Paused</b> — auto-trading resumes automatically in " +
+          mins + "m " + (secs < 10 ? "0" : "") + secs + "s.";
+      }
+      renderAccumSnapLog();
+      return; // nothing else to evaluate this tick while paused
+    }
+
+    // Target check — Login 1 only, one-shot latch so it doesn't re-fire
+    // (or spam the log) on every subsequent tick once already tripped.
+    // In plain (non-pause) mode it re-arms automatically the moment the
+    // combined total drops back below the target, matching the "live"
+    // nature of this panel. In pause mode the latch is instead cleared by
+    // resumeAfterAccumPause() once the countdown elapses, since the reset
+    // markets mean the total drops to 0 immediately anyway.
+    if(login1Active && cfg.mmAccumTargetProfit > 0 && total >= cfg.mmAccumTargetProfit){
+      if(!mmAccum.targetHit){
+        mmAccum.targetHit = true;
+        if(cfg.mmAccumPauseMode && cfg.mmAccumPauseMinutes > 0){
+          triggerAccumPause(total, counted);
+        } else {
+          if(cfg.autoTrade){
+            cfg.autoTrade = false;
+            autoToggle.checked = false;
+            updateMasterFlag();
+          }
+          logSystemNote(
+            "Accumulator target reached: combined live P&L across " + counted + " market" + (counted===1?"":"s") +
+            " is now " + formatPnl(total) + " (target was " + formatPnl(cfg.mmAccumTargetProfit) +
+            ") \u2014 auto-trading has been switched off. Markets, the scan, and sessions are unaffected; turn auto-trade back on manually whenever you're ready."
+          );
+        }
+        savePersisted();
+      }
+    } else if(!cfg.mmAccumPauseMode && mmAccum.targetHit && (!login1Active || total < cfg.mmAccumTargetProfit || cfg.mmAccumTargetProfit <= 0)){
+      // Re-arm only applies to plain mode — pause mode re-arms exclusively
+      // via resumeAfterAccumPause() once the countdown finishes.
+      mmAccum.targetHit = false;
+    }
+
+    if(mmAccumTargetStatus){
+      if(cfg.mmAccumTargetProfit <= 0){
+        mmAccumTargetStatus.style.display = "none";
+      } else if(!login1Active){
+        mmAccumTargetStatus.style.display = "";
+        mmAccumTargetStatus.innerHTML = "Paused — needs dual-login auto-switch off to track a combined Login 1 total.";
+      } else {
+        mmAccumTargetStatus.style.display = "";
+        if(mmAccum.targetHit){
+          mmAccumTargetStatus.innerHTML = "<b style=\"color:var(--rise);\">Target reached</b> — auto-trading was switched off when the combined total crossed " + formatPnl(cfg.mmAccumTargetProfit) + ".";
+        } else {
+          mmAccumTargetStatus.innerHTML = "Progress: " + formatPnl(total) + " / " + formatPnl(cfg.mmAccumTargetProfit) + " toward the target.";
+        }
+      }
+    }
+    if(mmAccumPauseStatus && !mmAccum.pausedUntil) mmAccumPauseStatus.style.display = "none";
+    renderAccumSnapLog();
+  }
+
+  // Fires the moment the accumulator target is reached while pause mode is
+  // on. Order matters: snapshot the CURRENT total first (before anything
+  // is reset, so the box records exactly what was actually accumulated),
+  // then reset every selected market back to 0, then switch auto-trading
+  // off and arm the countdown. Nothing about the scan, sessions, or
+  // connections is touched — only stats and the auto-trade flag.
+  function triggerAccumPause(total, counted){
+    snapshotAccumTotal(total, counted);
+
+    mmSelectedSyms.forEach(function(sym){
+      const inst = marketInstances[sym];
+      if(inst) resetInstanceSession(inst);
+    });
+
+    if(cfg.autoTrade){
+      cfg.autoTrade = false;
+      autoToggle.checked = false;
+      updateMasterFlag();
+    }
+
+    const mins = Math.max(1, Math.round(cfg.mmAccumPauseMinutes));
+    mmAccum.pausedUntil = Date.now() + mins * 60000;
+
+    logSystemNote(
+      "Accumulator target reached: combined live P&L across " + counted + " market" + (counted===1?"":"s") +
+      " hit " + formatPnl(total) + " (target was " + formatPnl(cfg.mmAccumTargetProfit) +
+      ") \u2014 snapshotted, every selected market's stats reset to 0, and auto-trading paused for " + mins +
+      " minute" + (mins===1?"":"s") + ". It will resume automatically once the countdown elapses."
+    );
+  }
+
+  // Called once the pause countdown reaches 0 (checked every second from
+  // inside updateMmAccum). Clears the countdown, re-arms the target latch
+  // so the next cycle can trip again, and switches auto-trading back on —
+  // markets are already sitting at 0 from the reset done in
+  // triggerAccumPause(), so this really is "start afresh".
+  function resumeAfterAccumPause(){
+    mmAccum.pausedUntil = 0;
+    mmAccum.targetHit = false;
+    if(mmAccumPauseStatus) mmAccumPauseStatus.style.display = "none";
+
+    if(mmEnabled && !cfg.autoTrade){
+      cfg.autoTrade = true;
+      autoToggle.checked = true;
+      updateMasterFlag();
+    }
+
+    logSystemNote(
+      "Accumulator pause complete — auto-trading has resumed automatically across every selected market, starting fresh from 0."
+    );
+    savePersisted();
+  }
+
+  // Append-only log of accumulator snapshots, separate from the shared
+  // Login-2 snapshot vault (that one only shows in dual mode; this one
+  // only shows in login-1-only mode, so keeping them apart avoids the two
+  // ever needing to share a visibility rule). Same capped/newest-last
+  // shape as the vault, purely for a running record of what was banked at
+  // each pause.
+  function snapshotAccumTotal(amount, counted){
+    const box = {
+      id: mmAccum.snapNextId++,
+      amount: amount,
+      markets: counted,
+      ts: Date.now()
+    };
+    mmAccum.snapBoxes.push(box);
+    if(mmAccum.snapBoxes.length > mmAccum.snapCap) mmAccum.snapBoxes.shift();
+    mmAccum.snapTotal += amount;
+  }
+
+  function renderAccumSnapLog(){
+    if(!mmAccumSnapGrid) return;
+    if(!mmAccum.snapBoxes.length){
+      mmAccumSnapGrid.style.display = "none";
+      return;
+    }
+    mmAccumSnapGrid.style.display = "";
+    mmAccumSnapGrid.innerHTML = "";
+    mmAccum.snapBoxes.slice().reverse().forEach(function(box){
+      const div = document.createElement("div");
+      div.className = "vault-box " + (box.amount >= 0 ? "pos" : "neg");
+      const time = new Date(box.ts).toLocaleTimeString();
+      div.innerHTML =
+        '<div class="vault-box-amt ' + (box.amount >= 0 ? "pos" : "neg") + '">' + formatPnl(box.amount) + '</div>' +
+        '<div class="vault-box-meta">' + box.markets + ' market' + (box.markets===1?"":"s") + ' · ' + time + '</div>';
+      mmAccumSnapGrid.appendChild(div);
+    });
   }
 
   /* ===================== BEN SNIPER SIGNAL ENGINE =====================
@@ -2751,9 +3051,7 @@
       masterText.textContent = "Auto-trading is ON";
       masterSub.textContent = (primary && primary.tradeInFlight)
         ? "Trade in progress — waiting for it to settle before the next signal can fire."
-        : "Trading " + cfg.minStrength.toUpperCase() + "+ signals on " + scopeLabel +
-          (cfg.minScorePct > 0 ? " · " + cfg.minScorePct + "%+ required on Medium/High (Low exempt)" : "") +
-          " · flat stake, no martingale.";
+        : "Trading signals on " + scopeLabel + " · flat stake, no martingale.";
     } else {
       masterFlag.className = "master-flag off";
       masterDot.className = "dot";
@@ -2812,15 +3110,17 @@
           if(inst.isPrimary) updateMasterFlag();
           if(inst.inMultiMarketScan){
             mmUpdateCard(inst.symbol);
-            if(mmActive && inst.activeLogin === 1 && cfg.mmResetTargetProfit > 0 && inst.dailyPnl >= cfg.mmResetTargetProfit){
+            if(mmActive && cfg.dualMode && inst.activeLogin === 1 && cfg.mmResetTargetProfit > 0 && inst.dailyPnl >= cfg.mmResetTargetProfit){
               const resetAmount = inst.dailyPnl;
               resetInstanceSession(inst);
               inst.mmResetCount++;
               inst.mmLastResetAt = Date.now();
               mmLogNote(inst.label + ": reset target profit of +" + cfg.mmResetTargetProfit.toFixed(2) + " reached after a watchdog-cleared trade (net " + formatPnl(resetAmount) + ") — market stats reset to 0 and continues trading.");
               mmUpdateCard(inst.symbol);
-            } else if(mmActive && inst.activeLogin === 2 && !inst.mmTargetHit && cfg.mmTargetProfit > 0 && inst.mmLogin2AccumPnl >= cfg.mmTargetProfit){
-              closeOutMarketOnTarget(inst);
+            } else if(mmActive && isLogin1TargetActive() && !inst.mmLogin1TargetHit && cfg.mmLogin1TargetProfit > 0 && inst.dailyPnl >= cfg.mmLogin1TargetProfit){
+              closeOutMarketOnTarget(inst, 1);
+            } else if(mmActive && isLogin2TargetActive() && inst.activeLogin === 2 && !inst.mmTargetHit && cfg.mmTargetProfit > 0 && inst.mmLogin2AccumPnl >= cfg.mmTargetProfit){
+              closeOutMarketOnTarget(inst, 2);
             } else {
               checkDualLoginSwitchForInstance(inst);
               maybeFirePendingDualSwitchForInstance(inst);
@@ -2910,13 +3210,51 @@
     });
   }
 
+  // The Login 1 target and Login 2 target are mutually exclusive — exactly
+  // one is ever "live" depending on dual-login auto-switch, matching how a
+  // market is never on both logins at once. Login-1-only mode (dual mode
+  // off) is the default, so the Login 1 target is the one that's active
+  // whenever dual mode isn't on; the Login 2 target only wakes up once
+  // dual mode is on (a market still has to actually be on Login 2 for it
+  // to bite on that particular market, but the field itself is only ever
+  // relevant/enabled in dual mode).
+  function isLogin1TargetActive(){ return !cfg.dualMode; }
+  function isLogin2TargetActive(){ return !!cfg.dualMode; }
+
   function mmUpdateStartBtn(){
     mmConflictNote.classList.toggle("show", cfg.dualMode);
     const anySessionReady = (session1.isOpen() && session1.authorized) || (session2.isOpen() && session2.authorized);
     const canStart = mmEnabled && mmSelectedSyms.length >= 1 && !mmActive && anySessionReady;
     mmStartBtn.disabled = !canStart;
     updateMmReverseUI();
-    updateMmLevelUI();
+    updateMmTargetUI();
+    updateVaultVisibility();
+    updateMmAccum();
+  }
+
+  // Greys out whichever of the two per-market target fields isn't active
+  // right now, and shows/hides the optional Login-1 reset-target row
+  // (only relevant once dual mode is on, since login-1-only mode already
+  // has its own closing target above).
+  function updateMmTargetUI(){
+    const login1Active = isLogin1TargetActive();
+    if(mmLogin1TargetField) mmLogin1TargetField.classList.toggle("field-inactive", !login1Active);
+    if(mmLogin1TargetProfitInput) mmLogin1TargetProfitInput.disabled = !login1Active;
+    if(mmLogin1TargetBadge) mmLogin1TargetBadge.textContent = login1Active ? "— active now" : "— needs dual-login off";
+
+    const login2Active = isLogin2TargetActive();
+    if(mmLogin2TargetField) mmLogin2TargetField.classList.toggle("field-inactive", !login2Active);
+    if(mmTargetProfitInput) mmTargetProfitInput.disabled = !login2Active;
+    if(mmLogin2TargetBadge) mmLogin2TargetBadge.textContent = login2Active ? "— active now" : "— needs dual-login on";
+
+    if(mmResetTargetRow) mmResetTargetRow.style.display = cfg.dualMode ? "" : "none";
+  }
+
+  // Snapshot vault only ever fills from completed Login 2 legs, so it has
+  // nothing to show and nothing to do in login-1-only mode — hide the
+  // whole panel until dual mode is on.
+  function updateVaultVisibility(){
+    if(vaultPanel) vaultPanel.style.display = cfg.dualMode ? "" : "none";
   }
 
   // Login 1 → Login 2 reverse mode only makes sense alongside dual-login
@@ -2940,27 +3278,6 @@
     }
   }
 
-  // Login 1 → Login 2 level mode only makes sense alongside dual-login
-  // auto-switch (it keys off each market's own activeLogin), so the row is
-  // hidden entirely unless dual mode is on. Whenever it IS on, the single
-  // global "Minimum signal strength" selector is disabled — this multi-
-  // market mode replaces it with a per-market, per-login decision instead.
-  // Unlike reverse mode, this does NOT touch reverseModeToggle — the two
-  // modes are independent and can run at the same time.
-  function updateMmLevelUI(){
-    if(mmLevelRow) mmLevelRow.style.display = cfg.dualMode ? "" : "none";
-    if(!cfg.dualMode && cfg.mmLoginLevelMode){
-      // Dual mode turned off while this was active — no per-login state to
-      // key off any more, so fall back to the main strength selector cleanly.
-      cfg.mmLoginLevelMode = false;
-      if(mmLoginLevelToggle) mmLoginLevelToggle.checked = false;
-    }
-    if(strengthField){
-      strengthField.classList.toggle("field-disabled", cfg.mmLoginLevelMode);
-      [...strengthSeg.children].forEach(function(b){ b.disabled = cfg.mmLoginLevelMode; });
-    }
-  }
-
   function mmLogNote(text){
     if(typeof logSystemNote === "function" && dashEl && !dashEl.classList.contains("locked")){
       logSystemNote(text);
@@ -2972,6 +3289,7 @@
   mmEnabledToggle.addEventListener("change", function(){
     mmEnabled = this.checked;
     mmUpdateStartBtn();
+    updateMmAccum();
     savePersisted();
   });
 
@@ -2982,18 +3300,6 @@
       this.checked
         ? "Login 1 → Login 2 reverse mode enabled — every selected market now trades normal direction on Login 1 and reversed direction on Login 2, independently, based on its own current login. The main Reverse mode toggle is disabled while this is on."
         : "Login 1 → Login 2 reverse mode disabled — multi-market trades follow the main Reverse mode toggle again."
-    );
-    allActiveInstances().forEach(function(inst){ if(inst.inMultiMarketScan) mmUpdateCard(inst.symbol); });
-    savePersisted();
-  });
-
-  mmLoginLevelToggle.addEventListener("change", function(){
-    cfg.mmLoginLevelMode = this.checked;
-    updateMmLevelUI();
-    mmLogNote(
-      this.checked
-        ? "Login 1 → Login 2 level mode enabled — every selected market now requires Low+ signals on Login 1 and Medium+ signals on Login 2, independently, based on its own current login. The main Minimum signal strength selector is disabled while this is on."
-        : "Login 1 → Login 2 level mode disabled — multi-market trades follow the main Minimum signal strength selector again."
     );
     allActiveInstances().forEach(function(inst){ if(inst.inMultiMarketScan) mmUpdateCard(inst.symbol); });
     savePersisted();
@@ -3012,6 +3318,7 @@
     // value typed into either target field is never lost to a missed/late
     // input event (e.g. user types then taps Start without blurring first).
     cfg.mmTargetProfit = parseFloat(mmTargetProfitInput.value) || 0;
+    cfg.mmLogin1TargetProfit = parseFloat(mmLogin1TargetProfitInput.value) || 0;
     cfg.mmResetTargetProfit = parseFloat(mmResetTargetProfitInput.value) || 0;
 
     const startSession = (session1.isOpen() && session1.authorized) ? session1
@@ -3088,6 +3395,7 @@
         inst.lastTradedSetupId = null;
         inst.contractMeta = {};
         inst.mmTargetHit = false;
+        inst.mmLogin1TargetHit = false;
         inst.mmLogin2AccumPnl = 0;
         inst.mmResetCount = 0;
         inst.mmLastResetAt = 0;
@@ -3146,7 +3454,6 @@
           '<span class="mm-card-sym">' + label + '</span>' +
           '<span class="mm-card-login" id="mm-login-' + sym + '" style="display:none; font-size:10px; padding:2px 6px; border-radius:4px; background:var(--panel-2); border:1px solid var(--line); color:var(--rise);">LOGIN 1</span>' +
           '<span class="mm-card-mode" id="mm-mode-' + sym + '" style="display:none; font-size:10px; padding:2px 6px; border-radius:4px; background:var(--panel-2); border:1px solid var(--line);">NORMAL</span>' +
-          '<span class="mm-card-level" id="mm-level-' + sym + '" style="display:none; font-size:10px; padding:2px 6px; border-radius:4px; background:var(--panel-2); border:1px solid var(--line);">LOW+</span>' +
           '<span class="mm-card-phase watch" id="mm-phase-' + sym + '">WARMING UP</span>' +
           '<span class="mm-card-price" id="mm-price-' + sym + '">—</span>' +
         '</div>' +
@@ -3190,28 +3497,10 @@
       }
     }
 
-    // Shows this market's own current minimum-strength requirement when
-    // Login 1 → Login 2 level mode is on — LOW+ while it's on Login 1,
-    // MEDIUM+ the moment it's on Login 2. Purely a readout of
-    // inst.activeLogin; each card only ever reflects its own instance,
-    // never any other market's state. Independent of the reverse-mode
-    // badge above — both can show at once since the two modes are
-    // unrelated to each other.
-    const levelEl = document.getElementById("mm-level-" + sym);
-    if(levelEl){
-      const showLevel = cfg.dualMode && cfg.mmLoginLevelMode;
-      levelEl.style.display = showLevel ? "" : "none";
-      if(showLevel){
-        const isLogin2 = inst.activeLogin === 2;
-        levelEl.textContent = isLogin2 ? "MEDIUM+" : "LOW+";
-        levelEl.style.color = isLogin2 ? "var(--amber)" : "var(--rise)";
-      }
-    }
-
     const phaseEl = document.getElementById("mm-phase-" + sym);
     if(phaseEl){
       let label = "WATCHING", cls = "watch";
-      if(inst.mmTargetHit){ label = "TARGET HIT"; cls = "closed"; }
+      if(inst.mmTargetHit || inst.mmLogin1TargetHit){ label = "TARGET HIT"; cls = "closed"; }
       else if(inst.haltReason){ label = "HALTED"; cls = "halted"; }
       else if(inst.tradeInFlight){ label = "IN TRADE"; cls = "armed"; }
       else if(!instHasEnoughBars(inst)){ label = "WARMING UP"; cls = "warm"; }
@@ -3221,7 +3510,7 @@
     }
 
     const cardEl = document.getElementById("mm-card-" + sym);
-    if(cardEl) cardEl.classList.toggle("mm-closed", !!inst.mmTargetHit);
+    if(cardEl) cardEl.classList.toggle("mm-closed", !!(inst.mmTargetHit || inst.mmLogin1TargetHit));
 
     const priceEl = document.getElementById("mm-price-" + sym);
     if(priceEl && inst.lastPrice != null) priceEl.textContent = inst.lastPrice.toFixed(decimalsForSymbol(sym));
@@ -3283,20 +3572,35 @@
     }
   }
 
-  // Builds the two target-tracking pills shown on every multi-market card:
-  //   Reset target (Login 1 only) — cfg.mmResetTargetProfit
-  //   Closing target (Login 2 only) — cfg.mmTargetProfit
+  // Builds the target-tracking pills shown on every multi-market card:
+  //   Login 1 closing target — cfg.mmLogin1TargetProfit (active in login-1-only mode)
+  //   Login 2 closing target — cfg.mmTargetProfit (active in dual mode, once on Login 2)
+  //   Reset target (Login 1, optional) — cfg.mmResetTargetProfit (only shown in dual mode)
   // Each pill's own state reflects THIS market's own numbers only:
   //   "off"          — value is 0, that target is disabled entirely
-  //   "idle-login"   — target has a value but this market isn't on the
-  //                    login it applies to, so it's armed but not counting
-  //                    toward it right now
+  //   "idle-login"   — target has a value but isn't active right now (wrong
+  //                    mode, or this market isn't on the login it applies to)
   //   "tracking"     — armed and actively counting this market's own P&L
   //                    against the target, with live progress shown
   //   "hit"          — this market already reset/closed on that target
   function targetPillsForInstance(inst){
     const cur = inst.session ? inst.session.accountCurrency : "";
+
+    const login1ClosePill = (function(){
+      if(inst.mmLogin1TargetHit) return '<span class="mm-target-pill hit"><span class="dot"></span>LOGIN 1 TARGET · hit at ' + formatPnl(inst.dailyPnl) + '</span>';
+      if(cfg.mmLogin1TargetProfit <= 0) return '<span class="mm-target-pill">LOGIN 1 TARGET · off</span>';
+      if(cfg.dualMode) return '<span class="mm-target-pill idle-login"><span class="dot"></span>LOGIN 1 TARGET +' + cfg.mmLogin1TargetProfit.toFixed(2) + ' · needs dual-login off</span>';
+      const remaining = Math.max(0, cfg.mmLogin1TargetProfit - inst.dailyPnl);
+      return '<span class="mm-target-pill tracking"><span class="dot"></span>LOGIN 1 TARGET +' + cfg.mmLogin1TargetProfit.toFixed(2) +
+        ' · ' + formatPnl(inst.dailyPnl) + ' / +' + cfg.mmLogin1TargetProfit.toFixed(2) +
+        ' (' + remaining.toFixed(2) + ' ' + cur + ' to go)</span>';
+    })();
+
+    // Reset target is an optional extra, only relevant/shown once dual mode
+    // is on — in login-1-only mode the Login 1 closing target above already
+    // covers Login 1, so this pill stays hidden entirely to avoid clutter.
     const resetPill = (function(){
+      if(!cfg.dualMode) return "";
       if(cfg.mmResetTargetProfit <= 0) return '<span class="mm-target-pill">RESET TARGET · off</span>';
       const justReset = inst.mmLastResetAt && (Date.now() - inst.mmLastResetAt < 4000);
       if(justReset){
@@ -3308,17 +3612,22 @@
         ' · ' + formatPnl(inst.dailyPnl) + ' / +' + cfg.mmResetTargetProfit.toFixed(2) +
         ' (' + remaining.toFixed(2) + ' ' + cur + ' to go)' + (inst.mmResetCount > 0 ? ' · resets: ' + inst.mmResetCount : '') + '</span>';
     })();
-    const closePill = (function(){
-      if(inst.mmTargetHit) return '<span class="mm-target-pill hit"><span class="dot"></span>CLOSING TARGET · hit at ' + formatPnl(inst.mmLogin2AccumPnl) + '</span>';
-      if(cfg.mmTargetProfit <= 0) return '<span class="mm-target-pill">CLOSING TARGET · off</span>';
-      if(!cfg.dualMode) return '<span class="mm-target-pill idle-login"><span class="dot"></span>CLOSE +' + cfg.mmTargetProfit.toFixed(2) + ' · needs dual-login on</span>';
-      if(inst.activeLogin !== 2) return '<span class="mm-target-pill idle-login"><span class="dot"></span>CLOSE +' + cfg.mmTargetProfit.toFixed(2) + ' · armed for Login 2' + (inst.mmLogin2AccumPnl !== 0 ? ' · accrued so far: ' + formatPnl(inst.mmLogin2AccumPnl) : '') + '</span>';
+
+    const login2ClosePill = (function(){
+      // In login-1-only mode this target doesn't run at all — hide the pill
+      // completely instead of showing a greyed "needs dual-login on" badge,
+      // so a Login-1-only card doesn't reference Login 2 at all.
+      if(!cfg.dualMode) return "";
+      if(inst.mmTargetHit) return '<span class="mm-target-pill hit"><span class="dot"></span>LOGIN 2 TARGET · hit at ' + formatPnl(inst.mmLogin2AccumPnl) + '</span>';
+      if(cfg.mmTargetProfit <= 0) return '<span class="mm-target-pill">LOGIN 2 TARGET · off</span>';
+      if(inst.activeLogin !== 2) return '<span class="mm-target-pill idle-login"><span class="dot"></span>LOGIN 2 TARGET +' + cfg.mmTargetProfit.toFixed(2) + ' · armed for Login 2' + (inst.mmLogin2AccumPnl !== 0 ? ' · accrued so far: ' + formatPnl(inst.mmLogin2AccumPnl) : '') + '</span>';
       const remaining = Math.max(0, cfg.mmTargetProfit - inst.mmLogin2AccumPnl);
-      return '<span class="mm-target-pill tracking"><span class="dot"></span>CLOSE +' + cfg.mmTargetProfit.toFixed(2) +
+      return '<span class="mm-target-pill tracking"><span class="dot"></span>LOGIN 2 TARGET +' + cfg.mmTargetProfit.toFixed(2) +
         ' · ' + formatPnl(inst.mmLogin2AccumPnl) + ' / +' + cfg.mmTargetProfit.toFixed(2) +
         ' (' + remaining.toFixed(2) + ' ' + cur + ' to go, across all Login 2 legs)</span>';
     })();
-    return resetPill + closePill;
+
+    return login1ClosePill + resetPill + login2ClosePill;
   }
 
   /* ===================== DUAL STATUS (per market + primary) ===================== */
@@ -3747,8 +4056,6 @@
         environment: envSelect.value,
         environment2: env2Select.value,
         symbol: primary ? primary.symbol : symbolSelect.value,
-        minStrength: cfg.minStrength,
-        minScorePct: cfg.minScorePct,
         stake: parseFloat(stakeInput.value) || 1,
         durationValue: parseInt(durationValueInput.value, 10) || 1,
         durationUnit: durationUnitSelect.value,
@@ -3769,12 +4076,20 @@
         vaultNextId: vault.nextId,
         vaultTargetProfit: parseFloat(vaultTargetProfitInput.value) || 0,
         vaultTargetHit: vault.targetHit,
+        mmAccumTargetProfit: parseFloat(mmAccumTargetInput.value) || 0,
+        mmAccumTargetHit: mmAccum.targetHit,
+        mmAccumPauseMode: mmAccumPauseModeToggle.checked,
+        mmAccumPauseMinutes: parseInt(mmAccumPauseMinutesInput.value, 10) || 15,
+        mmAccumPausedUntil: mmAccum.pausedUntil,
+        mmAccumSnapBoxes: mmAccum.snapBoxes,
+        mmAccumSnapTotal: mmAccum.snapTotal,
+        mmAccumSnapNextId: mmAccum.snapNextId,
         mmEnabled: mmEnabled,
         mmSelectedSyms: mmSelectedSyms,
         mmTargetProfit: parseFloat(mmTargetProfitInput.value) || 0,
+        mmLogin1TargetProfit: parseFloat(mmLogin1TargetProfitInput.value) || 0,
         mmResetTargetProfit: parseFloat(mmResetTargetProfitInput.value) || 0,
         mmLoginReverseMode: cfg.mmLoginReverseMode,
-        mmLoginLevelMode: cfg.mmLoginLevelMode,
         autoClearLogEnabled: autoClearLogToggle.checked,
         reverseMode: cfg.reverseMode,
         timeframe: currentTimeframe
@@ -3818,15 +4133,6 @@
       timeframeSelect.value = currentTimeframe;
     }
 
-    if(data.minStrength){
-      cfg.minStrength = data.minStrength;
-      [...strengthSeg.children].forEach(b=>{ b.classList.toggle("active", b.dataset.v === data.minStrength); });
-    }
-    if(data.minScorePct != null){
-      const v = Math.max(0, Math.min(100, parseFloat(data.minScorePct) || 0));
-      cfg.minScorePct = v;
-      minScorePctInput.value = v;
-    }
     if(data.stake != null){ stakeInput.value = data.stake; cfg.stake = data.stake; }
     if(data.durationValue != null){ durationValueInput.value = data.durationValue; cfg.durationValue = data.durationValue; }
     if(data.durationUnit){ durationUnitSelect.value = data.durationUnit; cfg.durationUnit = data.durationUnit; }
@@ -3834,14 +4140,11 @@
     if(data.lossLimit != null){ lossLimitInput.value = data.lossLimit; cfg.lossLimit = data.lossLimit; }
     if(data.profitTarget != null){ profitTargetInput.value = data.profitTarget; cfg.profitTarget = data.profitTarget; }
     if(data.mmTargetProfit != null){ mmTargetProfitInput.value = data.mmTargetProfit; cfg.mmTargetProfit = data.mmTargetProfit; }
+    if(data.mmLogin1TargetProfit != null){ mmLogin1TargetProfitInput.value = data.mmLogin1TargetProfit; cfg.mmLogin1TargetProfit = data.mmLogin1TargetProfit; }
     if(data.mmResetTargetProfit != null){ mmResetTargetProfitInput.value = data.mmResetTargetProfit; cfg.mmResetTargetProfit = data.mmResetTargetProfit; }
     if(data.mmLoginReverseMode != null){
       cfg.mmLoginReverseMode = !!data.mmLoginReverseMode;
       mmLoginReverseToggle.checked = cfg.mmLoginReverseMode;
-    }
-    if(data.mmLoginLevelMode != null){
-      cfg.mmLoginLevelMode = !!data.mmLoginLevelMode;
-      mmLoginLevelToggle.checked = cfg.mmLoginLevelMode;
     }
     if(data.autoClearLogEnabled != null){
       autoClearLogToggle.checked = !!data.autoClearLogEnabled;
@@ -3889,6 +4192,33 @@
       vaultTargetProfitInput.value = v;
     }
     vault.targetHit = !!data.vaultTargetHit;
+
+    if(data.mmAccumTargetProfit != null){
+      const av = Math.max(0, parseFloat(data.mmAccumTargetProfit) || 0);
+      cfg.mmAccumTargetProfit = av;
+      mmAccumTargetInput.value = av;
+    }
+    mmAccum.targetHit = !!data.mmAccumTargetHit;
+    if(data.mmAccumPauseMode != null){
+      cfg.mmAccumPauseMode = !!data.mmAccumPauseMode;
+      mmAccumPauseModeToggle.checked = cfg.mmAccumPauseMode;
+      mmAccumPauseMinutesWrap.style.display = cfg.mmAccumPauseMode ? "" : "none";
+    }
+    if(data.mmAccumPauseMinutes != null){
+      const pm = Math.max(1, parseInt(data.mmAccumPauseMinutes, 10) || 15);
+      cfg.mmAccumPauseMinutes = pm;
+      mmAccumPauseMinutesInput.value = pm;
+    }
+    // Restore a pause that was still counting down at the last save — if
+    // its time has already passed (browser was closed past the resume
+    // point), resume immediately on load rather than leaving auto-trading
+    // stuck off forever.
+    if(typeof data.mmAccumPausedUntil === "number" && data.mmAccumPausedUntil > 0){
+      mmAccum.pausedUntil = data.mmAccumPausedUntil;
+    }
+    if(Array.isArray(data.mmAccumSnapBoxes)) mmAccum.snapBoxes = data.mmAccumSnapBoxes.slice(-mmAccum.snapCap);
+    if(typeof data.mmAccumSnapTotal === "number") mmAccum.snapTotal = data.mmAccumSnapTotal;
+    if(typeof data.mmAccumSnapNextId === "number") mmAccum.snapNextId = data.mmAccumSnapNextId;
 
     if(Array.isArray(data.mmSelectedSyms)){
       mmSelectedSyms = data.mmSelectedSyms.filter(function(s){ return MM_SYMBOLS.hasOwnProperty(s); });
@@ -4027,6 +4357,7 @@
     }
     mmUpdateStartBtn();
     renderDualStatusAll();
+    updateMmAccum();
     savePersisted();
   });
 
@@ -4126,16 +4457,6 @@
     }
   });
 
-  strengthSeg.addEventListener("click", function(e){
-    const btn = e.target.closest("button");
-    if(!btn) return;
-    [...strengthSeg.children].forEach(b=>b.classList.remove("active","fall-active"));
-    btn.classList.add("active");
-    cfg.minStrength = btn.dataset.v;
-    updateMasterFlag();
-    savePersisted();
-  });
-
   stakeInput.addEventListener("change", function(){ cfg.stake = parseFloat(this.value)||1; savePersisted(); });
   durationValueInput.addEventListener("change", function(){
     cfg.durationValue = Math.max(1, parseInt(this.value,10) || 1);
@@ -4151,15 +4472,28 @@
   cooldownSelect.addEventListener("change", function(){ cfg.cooldown = parseInt(this.value,10); savePersisted(); });
   lossLimitInput.addEventListener("change", function(){ cfg.lossLimit = parseFloat(this.value)||0; savePersisted(); });
   profitTargetInput.addEventListener("change", function(){ cfg.profitTarget = parseFloat(this.value)||0; savePersisted(); });
-  minScorePctInput.addEventListener("change", function(){
-    let v = parseFloat(this.value);
-    if(isNaN(v)) v = 0;
-    v = Math.max(0, Math.min(100, v)); // clamp — this is a percentage, not an open-ended limit
-    this.value = v;
-    cfg.minScorePct = v;
+  mmTargetProfitInput.addEventListener("input", function(){ cfg.mmTargetProfit = parseFloat(this.value)||0; savePersisted(); if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); }); });
+  mmLogin1TargetProfitInput.addEventListener("input", function(){ cfg.mmLogin1TargetProfit = parseFloat(this.value)||0; savePersisted(); if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); }); });
+  mmAccumTargetInput.addEventListener("input", function(){
+    cfg.mmAccumTargetProfit = Math.max(0, parseFloat(this.value) || 0);
+    // Re-arm the latch whenever the target itself changes, so raising it
+    // after a hit (or setting a new lower one) is evaluated fresh on the
+    // very next tick rather than staying stuck on a stale trip. Only does
+    // this outside an active pause — a running countdown must finish on
+    // its own regardless of the target value being edited mid-pause.
+    if(!mmAccum.pausedUntil) mmAccum.targetHit = false;
+    updateMmAccum();
     savePersisted();
   });
-  mmTargetProfitInput.addEventListener("input", function(){ cfg.mmTargetProfit = parseFloat(this.value)||0; savePersisted(); if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); }); });
+  mmAccumPauseModeToggle.addEventListener("change", function(){
+    cfg.mmAccumPauseMode = this.checked;
+    mmAccumPauseMinutesWrap.style.display = this.checked ? "" : "none";
+    savePersisted();
+  });
+  mmAccumPauseMinutesInput.addEventListener("input", function(){
+    cfg.mmAccumPauseMinutes = Math.max(1, parseInt(this.value, 10) || 0);
+    savePersisted();
+  });
   mmResetTargetProfitInput.addEventListener("input", function(){ cfg.mmResetTargetProfit = parseFloat(this.value)||0; savePersisted(); if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); }); });
   vaultTargetProfitInput.addEventListener("input", function(){
     const v = Math.max(0, parseFloat(this.value) || 0);
@@ -4265,6 +4599,7 @@
   // expires back to normal rather than being stuck until the next trade.
   setInterval(function(){
     if(mmActive) mmSelectedSyms.forEach(function(sym){ mmUpdateCard(sym); });
+    updateMmAccum();
   }, 1000);
 
   // NOTE: no auto-connect-on-load — a manual disconnect or browser refresh
