@@ -1,0 +1,1565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eduvixa — AI Education for Curious Minds</title>
+<meta name="description" content="Eduvixa teaches students ages 8–18 how artificial intelligence actually works, through live, project-based courses.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23FFC93C' d='M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,500;1,9..144,600&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#131A34;
+    --navy-soft:#1B2450;
+    --navy-soft2:#212C5C;
+    --paper:#F4F5FB;
+    --paper-line:#E4E6F4;
+    --ink:#131A34;
+    --slate:#5B6285;
+    --muted:#A9B1D6;
+    --gold:#FFC93C;
+    --coral:#FF6F5E;
+    --mint:#2DD4BF;
+    --violet:#7C6CF0;
+    --sky:#4EA1FF;
+    --radius-lg:28px;
+    --radius-md:18px;
+    --radius-sm:10px;
+    --maxw:1220px;
+  }
+
+  *,*::before,*::after{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto;}
+    *,*::before,*::after{animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important; scroll-behavior:auto !important;}
+  }
+
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter', system-ui, sans-serif;
+    font-size:16px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  img,svg{display:block; max-width:100%;}
+  a{color:inherit;}
+  button{font-family:inherit;}
+
+  h1,h2,h3,h4{
+    font-family:'Fraunces', serif;
+    margin:0;
+    font-weight:600;
+    letter-spacing:-0.01em;
+    color:var(--ink);
+  }
+
+  .eyebrow{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:12.5px;
+    font-weight:600;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+  }
+
+  .wrap{
+    max-width:var(--maxw);
+    margin:0 auto;
+    padding:0 32px;
+  }
+  @media (max-width:640px){
+    .wrap{padding:0 20px;}
+  }
+
+  .spark-glyph{
+    display:inline-block;
+    width:14px; height:14px;
+    flex:none;
+  }
+
+  /* ---------- Buttons ---------- */
+  .btn{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:600;
+    font-size:14.5px;
+    letter-spacing:0.01em;
+    border-radius:999px;
+    padding:14px 26px;
+    border:1.5px solid transparent;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    text-decoration:none;
+    transition:transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease, border-color .18s ease;
+    white-space:nowrap;
+  }
+  .btn:focus-visible{outline:2.5px solid var(--sky); outline-offset:3px;}
+  .btn-primary{
+    background:var(--gold);
+    color:var(--navy);
+    box-shadow:0 1px 0 rgba(19,26,52,0.08);
+  }
+  .btn-primary:hover{transform:translateY(-2px); box-shadow:0 10px 24px -8px rgba(255,201,60,0.55);}
+  .btn-ghost-dark{
+    background:transparent;
+    color:#fff;
+    border-color:rgba(255,255,255,0.35);
+  }
+  .btn-ghost-dark:hover{border-color:#fff; transform:translateY(-2px);}
+  .btn-ghost-light{
+    background:transparent;
+    color:var(--navy);
+    border-color:rgba(19,26,52,0.25);
+  }
+  .btn-ghost-light:hover{border-color:var(--navy); transform:translateY(-2px);}
+  .btn-block{width:100%; justify-content:center;}
+
+  /* ---------- Nav ---------- */
+  header.site-header{
+    position:sticky; top:0; z-index:100;
+    background:transparent;
+    transition:background 0.35s ease, box-shadow 0.35s ease, backdrop-filter .35s ease;
+    padding:20px 0;
+  }
+  header.site-header.scrolled{
+    background:rgba(19,26,52,0.92);
+    backdrop-filter:blur(10px);
+    box-shadow:0 8px 30px -12px rgba(0,0,0,0.4);
+    padding:14px 0;
+  }
+  .nav-row{
+    display:flex; align-items:center; justify-content:space-between; gap:24px;
+  }
+  .logo{
+    display:flex; align-items:center; gap:9px;
+    font-family:'Fraunces', serif;
+    font-weight:700;
+    font-style:italic;
+    font-size:22px;
+    color:#fff;
+    text-decoration:none;
+  }
+  .logo .spark-glyph path{fill:var(--gold);}
+
+  nav.main-nav{display:flex; align-items:center; gap:34px;}
+  nav.main-nav a{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:14px;
+    font-weight:500;
+    color:rgba(255,255,255,0.82);
+    text-decoration:none;
+    letter-spacing:0.01em;
+    transition:color .2s ease;
+  }
+  nav.main-nav a:hover{color:#fff;}
+  .nav-actions{display:flex; align-items:center; gap:14px;}
+  .nav-cta{display:inline-flex;}
+
+  .burger{
+    display:none;
+    width:42px; height:42px;
+    border-radius:10px;
+    border:1.5px solid rgba(255,255,255,0.3);
+    background:transparent;
+    position:relative;
+    cursor:pointer;
+  }
+  .burger span{
+    position:absolute; left:11px; right:11px; height:2px; background:#fff; border-radius:2px;
+    transition:transform .25s ease, opacity .25s ease;
+  }
+  .burger span:nth-child(1){top:15px;}
+  .burger span:nth-child(2){top:20px;}
+  .burger span:nth-child(3){top:25px;}
+  .burger.open span:nth-child(1){transform:translateY(5px) rotate(45deg);}
+  .burger.open span:nth-child(2){opacity:0;}
+  .burger.open span:nth-child(3){transform:translateY(-5px) rotate(-45deg);}
+
+  .mobile-panel{
+    display:none;
+    position:fixed; inset:0; z-index:99;
+    background:var(--navy);
+    padding:110px 32px 40px;
+    flex-direction:column;
+    gap:26px;
+  }
+  .mobile-panel.open{display:flex;}
+  .mobile-panel a{
+    font-family:'Fraunces', serif;
+    font-size:26px;
+    color:#fff;
+    text-decoration:none;
+  }
+
+  @media (max-width:860px){
+    nav.main-nav{display:none;}
+    .nav-actions .nav-cta{display:none;}
+    .burger{display:block;}
+  }
+
+  /* ---------- Hero ---------- */
+  .hero{
+    background:
+      radial-gradient(circle at 14% 18%, rgba(124,108,240,0.35), transparent 42%),
+      radial-gradient(circle at 88% 6%, rgba(255,201,60,0.16), transparent 40%),
+      var(--navy);
+    position:relative;
+    overflow:hidden;
+    padding:76px 0 90px;
+    margin-top:-88px;
+    padding-top:calc(76px + 88px);
+  }
+  .hero::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image:radial-gradient(rgba(255,255,255,0.09) 1px, transparent 1px);
+    background-size:26px 26px;
+    mask-image:linear-gradient(to bottom, rgba(0,0,0,0.9), transparent 78%);
+    pointer-events:none;
+  }
+  .hero-inner{
+    position:relative; z-index:2;
+    display:grid;
+    grid-template-columns:1.05fr 0.95fr;
+    gap:56px;
+    align-items:center;
+  }
+  @media (max-width:980px){
+    .hero-inner{grid-template-columns:1fr; gap:52px;}
+  }
+
+  .hero .eyebrow{color:var(--gold);}
+  .hero h1{
+    color:#fff;
+    font-size:clamp(38px, 5.6vw, 64px);
+    line-height:1.06;
+    margin:20px 0 22px;
+    max-width:15ch;
+  }
+  .hero h1 em{
+    font-style:italic;
+    color:var(--gold);
+  }
+  .hero p.lede{
+    color:var(--muted);
+    font-size:18px;
+    max-width:46ch;
+    margin:0 0 34px;
+  }
+  .hero-ctas{display:flex; gap:14px; flex-wrap:wrap;}
+
+  .trust-strip{
+    margin-top:56px;
+    display:flex;
+    gap:40px;
+    flex-wrap:wrap;
+    padding-top:30px;
+    border-top:1px solid rgba(255,255,255,0.14);
+  }
+  .trust-item .stat-num{
+    font-family:'Fraunces', serif;
+    font-weight:700;
+    font-size:28px;
+    color:#fff;
+    display:flex; align-items:baseline; gap:2px;
+  }
+  .trust-item .stat-label{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:12.5px;
+    color:var(--muted);
+    letter-spacing:0.03em;
+    margin-top:2px;
+  }
+
+  /* ---------- Spark path signature ---------- */
+  .spark-panel{
+    position:relative;
+    background:linear-gradient(165deg, var(--navy-soft2), var(--navy-soft));
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:var(--radius-lg);
+    padding:44px 30px 34px;
+  }
+  .spark-panel .panel-tag{
+    color:var(--mint);
+    margin-bottom:22px;
+  }
+  .spark-svg{width:100%; height:auto; overflow:visible;}
+  .spark-path{
+    fill:none;
+    stroke:rgba(255,255,255,0.28);
+    stroke-width:2;
+    stroke-dasharray:6 8;
+    stroke-linecap:round;
+  }
+  .spark-node{transform-origin:center; transform-box:fill-box;}
+  .spark-node circle.core{
+    animation:spark-pulse 3.6s ease-in-out infinite;
+  }
+  .spark-node.n1 circle.core{animation-delay:0s; fill:var(--gold);}
+  .spark-node.n2 circle.core{animation-delay:1.2s; fill:var(--coral);}
+  .spark-node.n3 circle.core{animation-delay:2.4s; fill:var(--mint);}
+  .spark-node circle.ring{
+    fill:none; stroke-width:1.5; opacity:0.5;
+  }
+  .spark-node.n1 circle.ring{stroke:var(--gold);}
+  .spark-node.n2 circle.ring{stroke:var(--coral);}
+  .spark-node.n3 circle.ring{stroke:var(--mint);}
+
+  @keyframes spark-pulse{
+    0%, 8%{ r:5; filter:drop-shadow(0 0 0px currentColor);}
+    16%{ r:9; }
+    26%, 100%{ r:5; }
+  }
+
+  .spark-labels{
+    display:flex; justify-content:space-between;
+    margin-top:14px;
+  }
+  .spark-labels span{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:12px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--muted);
+    width:33%;
+    text-align:center;
+  }
+  .spark-labels span:first-child{text-align:left;}
+  .spark-labels span:last-child{text-align:right;}
+
+  .panel-note{
+    margin-top:26px;
+    padding-top:22px;
+    border-top:1px solid rgba(255,255,255,0.1);
+    color:var(--muted);
+    font-size:14.5px;
+  }
+  .panel-note strong{color:#fff; font-weight:600;}
+
+  /* ---------- Section shells ---------- */
+  section{padding:104px 0;}
+  @media (max-width:640px){section{padding:72px 0;}}
+  .section-head{
+    max-width:640px;
+    margin-bottom:52px;
+  }
+  .section-head .eyebrow{color:var(--violet);}
+  .section-head h2{
+    font-size:clamp(30px, 4vw, 44px);
+    margin:16px 0 16px;
+    line-height:1.1;
+  }
+  .section-head p{
+    color:var(--slate);
+    font-size:17px;
+    max-width:56ch;
+  }
+  .section-head.center{margin-left:auto; margin-right:auto; text-align:center;}
+
+  .reveal{opacity:0; transform:translateY(22px); transition:opacity .7s ease, transform .7s ease;}
+  .reveal.in-view{opacity:1; transform:translateY(0);}
+
+  /* ---------- Notebook texture section ---------- */
+  .notebook-bg{
+    background-image:repeating-linear-gradient(to bottom, transparent 0 38px, var(--paper-line) 38px 39px);
+    background-position:0 -6px;
+  }
+
+  /* ---------- AI in action (network visual) ---------- */
+  .ailab{
+    background:var(--navy);
+    position:relative;
+    overflow:hidden;
+    padding:96px 0;
+  }
+  .ailab::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image:radial-gradient(rgba(255,255,255,0.08) 1px, transparent 1px);
+    background-size:24px 24px;
+    mask-image:radial-gradient(circle at 70% 40%, rgba(0,0,0,0.8), transparent 70%);
+    pointer-events:none;
+  }
+  .ailab-inner{
+    position:relative; z-index:2;
+    display:grid;
+    grid-template-columns:0.9fr 1.1fr;
+    gap:54px;
+    align-items:center;
+  }
+  @media (max-width:980px){.ailab-inner{grid-template-columns:1fr;}}
+  .ailab .eyebrow{color:var(--mint);}
+  .ailab h2{color:#fff; font-size:clamp(28px,3.6vw,40px); margin:16px 0 16px; line-height:1.12;}
+  .ailab p.ailab-copy{color:var(--muted); font-size:16px; max-width:46ch;}
+  .ailab-legend{display:flex; gap:22px; margin-top:26px; flex-wrap:wrap;}
+  .ailab-legend span{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:12.5px;
+    color:var(--muted);
+    display:flex; align-items:center; gap:8px;
+  }
+  .ailab-legend i{width:9px; height:9px; border-radius:50%; display:inline-block;}
+
+  .net-panel{
+    background:linear-gradient(165deg, var(--navy-soft2), var(--navy-soft));
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:var(--radius-lg);
+    padding:30px 22px 26px;
+  }
+  .net-svg{width:100%; height:auto;}
+  .net-line{stroke:rgba(255,255,255,0.14); stroke-width:1;}
+  .net-node{fill:var(--navy); stroke-width:2;}
+  .net-node.in{stroke:var(--mint);}
+  .net-node.hid{stroke:var(--violet);}
+  .net-node.out{stroke:var(--gold);}
+  .net-pulse{filter:drop-shadow(0 0 4px currentColor);}
+
+  .net-readout{
+    margin-top:22px;
+    padding-top:20px;
+    border-top:1px solid rgba(255,255,255,0.12);
+    display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+  }
+  .net-readout .ro-label{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:11.5px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+  .net-readout .ro-value{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-style:italic;
+    font-size:22px;
+    color:#fff;
+    transition:opacity .25s ease;
+  }
+  .net-readout .ro-conf{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:14px;
+    color:var(--mint);
+    font-weight:600;
+  }
+
+  /* ---------- Courses (track cards) ---------- */
+  .track-grid{
+    display:grid;
+    grid-template-columns:repeat(5, 1fr);
+    gap:18px;
+  }
+  @media (max-width:1100px){.track-grid{grid-template-columns:repeat(3,1fr);}}
+  @media (max-width:660px){.track-grid{grid-template-columns:1fr;}}
+
+  .track-card{
+    background:#fff;
+    border-radius:var(--radius-md);
+    padding:26px 22px 22px;
+    border:1px solid var(--paper-line);
+    border-top:4px solid var(--cat-color, var(--violet));
+    display:flex; flex-direction:column;
+  }
+  .track-card .spark-glyph{width:18px; height:18px; margin-bottom:14px;}
+  .track-card h3{
+    font-size:19px;
+    margin-bottom:6px;
+    line-height:1.2;
+  }
+  .track-meta{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:11.5px;
+    color:var(--cat-color, var(--violet));
+    font-weight:700;
+    letter-spacing:0.03em;
+    margin-bottom:12px;
+  }
+  .track-card p.track-desc{
+    color:var(--slate);
+    font-size:14px;
+    margin:0 0 18px;
+  }
+  .track-toggle{
+    margin-top:auto;
+    display:inline-flex; align-items:center; gap:6px;
+    background:none; border:none; padding:0;
+    font-family:'Space Grotesk', sans-serif;
+    font-size:13px; font-weight:600;
+    color:var(--ink);
+    cursor:pointer;
+  }
+  .track-toggle .chev{transition:transform .25s ease; font-size:11px;}
+  .track-toggle[aria-expanded="true"] .chev{transform:rotate(180deg);}
+  .track-toggle:focus-visible{outline:2.5px solid var(--sky); outline-offset:3px;}
+
+  .track-courses{
+    list-style:none; margin:0; padding:0;
+    max-height:0;
+    overflow:hidden;
+    transition:max-height .35s ease, margin-top .35s ease;
+  }
+  .track-courses.open{
+    max-height:420px;
+    margin-top:16px;
+  }
+  .track-courses li{
+    display:flex; justify-content:space-between; gap:10px;
+    font-size:13px;
+    padding:9px 0;
+    border-top:1px dashed var(--paper-line);
+    color:var(--ink);
+  }
+  .track-courses li span{color:var(--slate); white-space:nowrap; font-family:'Space Grotesk', sans-serif; font-size:11.5px;}
+
+  /* ---------- How it works ---------- */
+  .how-grid{
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    gap:22px;
+  }
+  @media (max-width:900px){.how-grid{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:560px){.how-grid{grid-template-columns:1fr;}}
+  .how-card{
+    position:relative;
+    padding:30px 22px 26px;
+    background:var(--navy);
+    border-radius:var(--radius-md);
+    color:#fff;
+    min-height:220px;
+    display:flex; flex-direction:column;
+  }
+  .how-card:nth-child(1){background:linear-gradient(160deg, var(--navy-soft2), var(--navy));}
+  .how-card:nth-child(2){background:linear-gradient(160deg, #2A2568, var(--navy));}
+  .how-card:nth-child(3){background:linear-gradient(160deg, #1F3A63, var(--navy));}
+  .how-card:nth-child(4){background:linear-gradient(160deg, #2E2140, var(--navy));}
+  .how-num{
+    font-family:'Fraunces', serif;
+    font-style:italic;
+    font-weight:600;
+    font-size:15px;
+    color:var(--gold);
+    margin-bottom:auto;
+  }
+  .how-card h3{
+    color:#fff;
+    font-size:21px;
+    margin:22px 0 10px;
+  }
+  .how-card p{color:var(--muted); font-size:14px; margin:0;}
+
+  /* ---------- Why ---------- */
+  .why-grid{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:2px;
+    background:var(--paper-line);
+    border:1px solid var(--paper-line);
+    border-radius:var(--radius-md);
+    overflow:hidden;
+  }
+  @media (max-width:900px){.why-grid{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:560px){.why-grid{grid-template-columns:1fr;}}
+  .why-card{
+    background:#fff;
+    padding:30px 26px;
+  }
+  .why-card .spark-glyph{width:20px; height:20px; margin-bottom:16px;}
+  .why-card h3{font-size:18px; margin-bottom:8px;}
+  .why-card p{font-size:14.5px; color:var(--slate); margin:0;}
+
+  /* ---------- Testimonials ---------- */
+  .test-grid{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:22px;
+  }
+  @media (max-width:900px){.test-grid{grid-template-columns:1fr;}}
+  .test-card{
+    background:var(--paper);
+    border:1px solid var(--paper-line);
+    border-radius:var(--radius-md);
+    padding:28px 26px;
+    display:flex; flex-direction:column;
+  }
+  .test-card .quote-mark{
+    font-family:'Fraunces', serif;
+    font-size:44px;
+    color:var(--gold);
+    line-height:1;
+    margin-bottom:6px;
+  }
+  .test-card p.quote{
+    font-family:'Fraunces', serif;
+    font-size:18px;
+    font-weight:500;
+    line-height:1.45;
+    margin:0 0 20px;
+    flex-grow:1;
+  }
+  .test-who{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:13px;
+    color:var(--slate);
+  }
+  .test-who strong{color:var(--ink);}
+
+  /* ---------- Schools ---------- */
+  .schools-panel{
+    background:linear-gradient(120deg, var(--navy), var(--navy-soft2));
+    border-radius:var(--radius-lg);
+    padding:60px;
+    display:grid;
+    grid-template-columns:1.1fr 0.9fr;
+    gap:40px;
+    align-items:center;
+    color:#fff;
+  }
+  @media (max-width:900px){.schools-panel{grid-template-columns:1fr; padding:40px 26px;}}
+  .schools-panel .eyebrow{color:var(--sky);}
+  .schools-panel h2{color:#fff; font-size:clamp(26px,3.4vw,36px); margin:16px 0;}
+  .schools-panel p{color:var(--muted); font-size:15.5px;}
+  .schools-list{list-style:none; padding:0; margin:24px 0 0; display:flex; flex-direction:column; gap:12px;}
+  .schools-list li{
+    display:flex; gap:10px; align-items:flex-start;
+    font-size:14.5px; color:#fff;
+  }
+  .schools-list li .spark-glyph{width:14px; height:14px; margin-top:4px; flex:none;}
+  .schools-card{
+    background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.14);
+    border-radius:var(--radius-md);
+    padding:30px;
+  }
+  .schools-card h4{color:#fff; font-size:16px; margin-bottom:8px;}
+  .schools-card p{font-size:13.5px; color:var(--muted); margin:0 0 20px;}
+
+  /* ---------- CTA banner ---------- */
+  .cta-banner{
+    background:var(--gold);
+    border-radius:var(--radius-lg);
+    padding:64px 56px;
+    text-align:center;
+  }
+  @media (max-width:640px){.cta-banner{padding:44px 24px;}}
+  .cta-banner .eyebrow{color:var(--navy); opacity:0.65;}
+  .cta-banner h2{
+    font-size:clamp(28px, 4vw, 42px);
+    margin:16px auto 14px;
+    max-width:18ch;
+  }
+  .cta-banner p{color:rgba(19,26,52,0.75); font-size:16px; max-width:48ch; margin:0 auto 32px;}
+  .cta-form{
+    max-width:520px;
+    margin:0 auto;
+    text-align:left;
+    background:rgba(255,255,255,0.55);
+    border:1.5px solid rgba(19,26,52,0.15);
+    border-radius:var(--radius-md);
+    padding:26px;
+  }
+  .cta-form .field-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+  }
+  @media (max-width:520px){.cta-form .field-grid{grid-template-columns:1fr;}}
+  .cta-form label{
+    display:flex; flex-direction:column; gap:6px;
+    font-family:'Space Grotesk', sans-serif;
+    font-size:12px;
+    font-weight:600;
+    color:rgba(19,26,52,0.75);
+    text-align:left;
+  }
+  .cta-form label.full{grid-column:1 / -1;}
+  .cta-form input{
+    width:100%;
+    padding:12px 15px;
+    border-radius:10px;
+    border:1.5px solid rgba(19,26,52,0.22);
+    background:rgba(255,255,255,0.75);
+    font-family:'Inter', sans-serif;
+    font-size:14px;
+    color:var(--navy);
+  }
+  .cta-form input::placeholder{color:rgba(19,26,52,0.42);}
+  .cta-form input:focus-visible{outline:2.5px solid var(--navy); outline-offset:2px;}
+  .cta-form .btn{
+    background:var(--navy); color:#fff;
+    margin-top:16px;
+    width:100%;
+    justify-content:center;
+  }
+  .cta-form .btn:hover{transform:translateY(-2px); box-shadow:0 10px 24px -10px rgba(19,26,52,0.5);}
+  .cta-form .form-note{
+    margin-top:12px;
+    font-size:12px;
+    color:rgba(19,26,52,0.55);
+    text-align:center;
+  }
+
+  .payment-panel{
+    display:none;
+    max-width:520px;
+    margin:0 auto;
+    text-align:left;
+    background:var(--navy);
+    border-radius:var(--radius-md);
+    padding:28px 26px;
+    color:#fff;
+  }
+  .payment-panel.show{display:block;}
+  .payment-panel .pp-eyebrow{
+    color:var(--mint);
+  }
+  .payment-panel h3{
+    color:#fff;
+    font-size:21px;
+    margin:14px 0 6px;
+  }
+  .payment-panel p.pp-copy{
+    color:var(--muted);
+    font-size:14px;
+    margin:0 0 20px;
+  }
+  .payment-card{
+    background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.14);
+    border-radius:var(--radius-sm);
+    padding:20px;
+    margin-bottom:18px;
+  }
+  .payment-row{
+    display:flex; justify-content:space-between; align-items:center; gap:12px;
+    padding:11px 0;
+    border-bottom:1px dashed rgba(255,255,255,0.14);
+  }
+  .payment-row:last-child{border-bottom:none;}
+  .payment-row .pp-label{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:11.5px;
+    letter-spacing:0.05em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+  .payment-row .pp-value{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:16px;
+    color:#fff;
+    text-align:right;
+  }
+  .payment-row .pp-value.amount{color:var(--gold); font-size:19px;}
+  .copy-btn{
+    background:rgba(255,255,255,0.12);
+    border:1px solid rgba(255,255,255,0.25);
+    color:#fff;
+    font-family:'Space Grotesk', sans-serif;
+    font-size:11px;
+    font-weight:600;
+    padding:5px 10px;
+    border-radius:8px;
+    cursor:pointer;
+    margin-left:10px;
+    flex:none;
+    transition:background .2s ease;
+  }
+  .copy-btn:hover{background:rgba(255,255,255,0.22);}
+  .payment-panel .btn{
+    width:100%;
+    justify-content:center;
+    background:var(--gold);
+    color:var(--navy);
+  }
+  .payment-panel .btn:hover{transform:translateY(-2px); box-shadow:0 10px 24px -10px rgba(255,201,60,0.5);}
+  .payment-panel .pp-note{
+    margin-top:14px;
+    font-size:12.5px;
+    color:var(--muted);
+    text-align:center;
+  }
+
+  /* ---------- Footer ---------- */
+  footer{
+    background:var(--navy);
+    color:var(--muted);
+    padding:76px 0 30px;
+  }
+  .footer-top{
+    display:grid;
+    grid-template-columns:1.3fr repeat(4, 0.9fr);
+    gap:32px;
+    padding-bottom:54px;
+    border-bottom:1px solid rgba(255,255,255,0.12);
+  }
+  @media (max-width:900px){.footer-top{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:560px){.footer-top{grid-template-columns:1fr;}}
+  .footer-brand .logo{margin-bottom:14px;}
+  .footer-brand p{font-size:14px; max-width:34ch; color:var(--muted);}
+  .footer-col h5{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:12.5px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:#fff;
+    margin:0 0 16px;
+  }
+  .footer-col ul{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:11px;}
+  .footer-col a{
+    font-size:14px; color:var(--muted); text-decoration:none; transition:color .2s;
+  }
+  .footer-col a:hover{color:#fff;}
+  .newsletter{margin-top:8px;}
+  .newsletter form{display:flex; gap:8px; margin-top:12px;}
+  .newsletter input{
+    flex:1;
+    padding:11px 14px;
+    border-radius:10px;
+    border:1px solid rgba(255,255,255,0.2);
+    background:rgba(255,255,255,0.06);
+    color:#fff;
+    font-size:13.5px;
+  }
+  .newsletter input::placeholder{color:var(--muted);}
+  .newsletter button{
+    background:var(--gold); color:var(--navy); border:none; border-radius:10px;
+    padding:0 16px; font-weight:700; font-size:13px; cursor:pointer; font-family:'Space Grotesk',sans-serif;
+  }
+  .footer-bottom{
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;
+    padding-top:28px;
+    font-size:13px;
+  }
+  .footer-bottom .socials{display:flex; gap:18px;}
+  .footer-bottom .socials a{color:var(--muted); text-decoration:none; font-family:'Space Grotesk',sans-serif; font-size:13px;}
+  .footer-bottom .socials a:hover{color:#fff;}
+
+  ::selection{background:var(--gold); color:var(--navy);}
+</style>
+</head>
+<body>
+
+<!-- ================= NAV ================= -->
+<header class="site-header" id="siteHeader">
+  <div class="wrap nav-row">
+    <a href="#top" class="logo">
+      <svg class="spark-glyph" viewBox="0 0 24 24"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+      Eduvixa
+    </a>
+    <nav class="main-nav" aria-label="Primary">
+      <a href="#courses">Courses</a>
+      <a href="#how">How it works</a>
+      <a href="#why">Why Eduvixa</a>
+      <a href="#schools">For schools</a>
+      <a href="#testimonials">Stories</a>
+    </nav>
+    <div class="nav-actions">
+      <a href="#cta" class="btn btn-primary nav-cta">Start learning</a>
+      <button class="burger" id="burgerBtn" aria-label="Open menu" aria-expanded="false" aria-controls="mobilePanel">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="mobile-panel" id="mobilePanel">
+  <a href="#courses">Courses</a>
+  <a href="#how">How it works</a>
+  <a href="#why">Why Eduvixa</a>
+  <a href="#schools">For schools</a>
+  <a href="#testimonials">Stories</a>
+  <a href="#cta" class="btn btn-primary" style="margin-top:10px;">Start learning</a>
+</div>
+
+<main id="top">
+
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <div class="wrap hero-inner">
+      <div>
+        <span class="eyebrow">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#FFC93C"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          AI education for curious minds
+        </span>
+        <h1>Where curious minds learn to <em>build</em> with AI.</h1>
+        <p class="lede">Eduvixa is a live, project-based learning platform teaching students ages 8–18 how artificial intelligence actually works — from first spark of curiosity to first shipped project.</p>
+        <div class="hero-ctas">
+          <a href="#courses" class="btn btn-primary">Explore all courses</a>
+          <a href="#cta" class="btn btn-ghost-dark">Book your class now</a>
+        </div>
+
+      </div>
+
+      <div class="spark-panel reveal">
+        <span class="eyebrow panel-tag">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#2DD4BF"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          How an idea travels
+        </span>
+        <svg class="spark-svg" viewBox="0 0 400 160">
+          <path class="spark-path" d="M40,120 C110,40 150,150 200,80 C250,10 290,140 360,40"></path>
+          <g class="spark-node n1">
+            <circle class="ring" cx="40" cy="120" r="14"></circle>
+            <circle class="core" cx="40" cy="120" r="5"></circle>
+          </g>
+          <g class="spark-node n2">
+            <circle class="ring" cx="200" cy="80" r="14"></circle>
+            <circle class="core" cx="200" cy="80" r="5"></circle>
+          </g>
+          <g class="spark-node n3">
+            <circle class="ring" cx="360" cy="40" r="14"></circle>
+            <circle class="core" cx="360" cy="40" r="5"></circle>
+          </g>
+        </svg>
+        <div class="spark-labels">
+          <span>Curiosity</span>
+          <span>Code</span>
+          <span>Creation</span>
+        </div>
+        <div class="panel-note">
+          <strong>Every course follows this arc.</strong> Students start with a question, learn the mechanics behind it, then build something real to answer it themselves.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= COURSES ================= -->
+  <!-- ================= AI IN ACTION ================= -->
+  <section class="ailab" id="ailab">
+    <div class="wrap ailab-inner">
+      <div>
+        <span class="eyebrow">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#2DD4BF"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          AI, live
+        </span>
+        <h2>Watch a neural network think.</h2>
+        <p class="ailab-copy">This is what every Eduvixa student eventually builds and understands: input flows in, hidden layers weigh it, and an output comes out the other side — with a confidence score attached.</p>
+        <div class="ailab-legend">
+          <span><i style="background:var(--mint);"></i>Input layer</span>
+          <span><i style="background:var(--violet);"></i>Hidden layer</span>
+          <span><i style="background:var(--gold);"></i>Output layer</span>
+        </div>
+      </div>
+
+      <div class="net-panel reveal">
+        <svg class="net-svg" viewBox="0 0 420 220">
+          <g id="netLines"></g>
+          <g id="netPulses"></g>
+          <g id="netNodes"></g>
+        </svg>
+        <div class="net-readout">
+          <div>
+            <div class="ro-label">Reading</div>
+            <div class="ro-value" id="roValue">spark</div>
+          </div>
+          <div class="ro-conf" id="roConf">confidence 97%</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="courses" class="notebook-bg">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow" style="color:var(--coral);">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#FF6F5E"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          The full catalog
+        </span>
+        <h2>Every AI course your student needs, in one place.</h2>
+        <p>Five tracks covering all sixteen Eduvixa courses, ages 8 through 18. Tap a track to see everything inside it.</p>
+      </div>
+
+      <div class="track-grid" id="trackGrid">
+
+        <div class="track-card reveal" style="--cat-color:var(--mint);">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#2DD4BF"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Foundations</h3>
+          <div class="track-meta">Ages 8–14 · 3 courses</div>
+          <p class="track-desc">A first, playful look at how AI works — no coding required.</p>
+          <button class="track-toggle" aria-expanded="false">See the 3 courses <span class="chev">▾</span></button>
+          <ul class="track-courses">
+            <li>AI Explorers <span>6 wks</span></li>
+            <li>How Machines Think <span>6 wks</span></li>
+            <li>AI in Everyday Life <span>4 wks</span></li>
+          </ul>
+        </div>
+
+        <div class="track-card reveal" style="--cat-color:var(--violet);">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#7C6CF0"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Coding &amp; ML</h3>
+          <div class="track-meta">Ages 12–18 · 3 courses</div>
+          <p class="track-desc">Real Python and machine learning, built from the ground up.</p>
+          <button class="track-toggle" aria-expanded="false">See the 3 courses <span class="chev">▾</span></button>
+          <ul class="track-courses">
+            <li>Python for AI Beginners <span>8 wks</span></li>
+            <li>Intro to Machine Learning <span>8 wks</span></li>
+            <li>Neural Networks 101 <span>6 wks</span></li>
+          </ul>
+        </div>
+
+        <div class="track-card reveal" style="--cat-color:var(--coral);">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#FF6F5E"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Creative AI</h3>
+          <div class="track-meta">Ages 11–18 · 4 courses</div>
+          <p class="track-desc">Art, music, and video, directed and produced with AI tools.</p>
+          <button class="track-toggle" aria-expanded="false">See the 4 courses <span class="chev">▾</span></button>
+          <ul class="track-courses">
+            <li>Prompt Engineering for Creators <span>4 wks</span></li>
+            <li>Generative Art with AI <span>5 wks</span></li>
+            <li>AI Music &amp; Sound Lab <span>5 wks</span></li>
+            <li>AI Video &amp; Animation <span>6 wks</span></li>
+          </ul>
+        </div>
+
+        <div class="track-card reveal" style="--cat-color:var(--gold);">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#FFC93C"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Advanced &amp; Careers</h3>
+          <div class="track-meta">Ages 13–18 · 5 courses</div>
+          <p class="track-desc">Capstone-level builds in vision, language, and robotics.</p>
+          <button class="track-toggle" aria-expanded="false">See the 5 courses <span class="chev">▾</span></button>
+          <ul class="track-courses">
+            <li>Build Your First AI App <span>10 wks</span></li>
+            <li>Computer Vision Basics <span>8 wks</span></li>
+            <li>Natural Language Processing <span>8 wks</span></li>
+            <li>Robotics &amp; AI <span>8 wks</span></li>
+            <li>AI Hackathon Prep <span>3 wks</span></li>
+          </ul>
+        </div>
+
+        <div class="track-card reveal" style="--cat-color:var(--sky);">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#4EA1FF"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Ethics &amp; Society</h3>
+          <div class="track-meta">Ages 13–18 · 1 course</div>
+          <p class="track-desc">Bias, privacy, and responsible AI, explored through debate.</p>
+          <button class="track-toggle" aria-expanded="false">See the 1 course <span class="chev">▾</span></button>
+          <ul class="track-courses">
+            <li>AI Ethics &amp; Society <span>5 wks</span></li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HOW IT WORKS ================= -->
+  <section id="how">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow" style="color:var(--gold-text, var(--coral));">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#FFC93C"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          The path every student takes
+        </span>
+        <h2>From first question to finished project.</h2>
+        <p>Every Eduvixa course, from AI Explorers to Build Your First AI App, moves through the same four stages.</p>
+      </div>
+      <div class="how-grid">
+        <div class="how-card reveal">
+          <span class="how-num">01</span>
+          <h3>Discover</h3>
+          <p>Take a free placement class, find the right track for your age and interest, and meet your mentor.</p>
+        </div>
+        <div class="how-card reveal">
+          <span class="how-num">02</span>
+          <h3>Learn</h3>
+          <p>Join small live sessions, twice a week, where mentors teach concepts through demos, not lectures.</p>
+        </div>
+        <div class="how-card reveal">
+          <span class="how-num">03</span>
+          <h3>Build</h3>
+          <p>Apply every concept to a hands-on AI project chosen by the student — not a worksheet, a real build.</p>
+        </div>
+        <div class="how-card reveal">
+          <span class="how-num">04</span>
+          <h3>Showcase</h3>
+          <p>Present the finished project at a live demo day and earn a certificate and portfolio piece.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WHY ================= -->
+  <section id="why" class="notebook-bg">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow" style="color:var(--violet);">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#7C6CF0"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          Why Eduvixa
+        </span>
+        <h2>Built for how young people actually learn.</h2>
+        <p>Not a video library. Not a chatbot tutor. A real classroom, run by real people, built around real projects.</p>
+      </div>
+      <div class="why-grid reveal">
+        <div class="why-card">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#FFC93C"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Real human mentors</h3>
+          <p>Every class is led by a practitioner or educator — not a pre-recorded video, not an AI chatbot.</p>
+        </div>
+        <div class="why-card">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#FF6F5E"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Small live cohorts</h3>
+          <p>Twelve students per class, max. Every kid gets to ask questions, build, and be heard.</p>
+        </div>
+        <div class="why-card">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#2DD4BF"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Project-first curriculum</h3>
+          <p>No lecture without a build. Every unit ends in something the student actually made.</p>
+        </div>
+        <div class="why-card">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#4EA1FF"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Kid-safe by design</h3>
+          <p>Moderated platforms, background-checked mentors, and a live parent dashboard for every account.</p>
+        </div>
+        <div class="why-card">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#7C6CF0"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Certificates &amp; portfolio</h3>
+          <p>A shareable project portfolio and certificate for every course a student completes.</p>
+        </div>
+        <div class="why-card">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#FFC93C"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          <h3>Flexible pacing</h3>
+          <p>Live cohorts or self-paced tracks, so learning fits around school rather than competing with it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TESTIMONIALS ================= -->
+  <section id="testimonials">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow" style="color:var(--coral);">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#FF6F5E"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          From our students and families
+        </span>
+        <h2>What it feels like to build your first AI project.</h2>
+      </div>
+      <div class="test-grid">
+        <div class="test-card reveal">
+          <div class="quote-mark">"</div>
+          <p class="quote">My daughter went from "what even is AI" to demoing her own chatbot in eight weeks. The mentors made it click.</p>
+          <div class="test-who"><strong>Ngozi A.</strong> — parent, AI Explorers</div>
+        </div>
+        <div class="test-card reveal">
+          <div class="quote-mark">"</div>
+          <p class="quote">I built my first neural network at 15. Now I actually understand what's running under the apps I use every day.</p>
+          <div class="test-who"><strong>Emeka O.</strong> — student, Neural Networks 101</div>
+        </div>
+        <div class="test-card reveal">
+          <div class="quote-mark">"</div>
+          <p class="quote">The live classes felt more like a robotics club than school. I never once wanted a session to end.</p>
+          <div class="test-who"><strong>Amina B.</strong> — student, Robotics &amp; AI</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SCHOOLS ================= -->
+  <section id="schools">
+    <div class="wrap">
+      <div class="schools-panel reveal">
+        <div>
+          <span class="eyebrow">
+            <svg class="spark-glyph" viewBox="0 0 24 24" fill="#4EA1FF"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+            For schools &amp; educators
+          </span>
+          <h2>Bring Eduvixa into your classroom.</h2>
+          <p>License the full catalog for a classroom, grade, or district — complete with teacher training, standards alignment, and ready-to-teach materials.</p>
+          <ul class="schools-list">
+            <li><svg class="spark-glyph" viewBox="0 0 24 24" fill="#FFC93C"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg> Standards-aligned curriculum across all five tracks</li>
+            <li><svg class="spark-glyph" viewBox="0 0 24 24" fill="#FFC93C"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg> Teacher onboarding, training, and ongoing support</li>
+            <li><svg class="spark-glyph" viewBox="0 0 24 24" fill="#FFC93C"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg> Flexible licensing, from a single classroom to a full district</li>
+          </ul>
+        </div>
+        <div class="schools-card">
+          <h4>Talk to our schools team</h4>
+          <p>Tell us your grade levels and goals — we'll build a pilot plan within a week.</p>
+          <a href="https://wa.me/2347083041911" target="_blank" rel="noopener" class="btn btn-primary btn-block">Partner with Eduvixa</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FINAL CTA ================= -->
+  <section id="cta">
+    <div class="wrap">
+      <div class="cta-banner reveal">
+        <span class="eyebrow">
+          <svg class="spark-glyph" viewBox="0 0 24 24" fill="#131A34"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          Start this week
+        </span>
+        <h2>Your student's first AI project starts today.</h2>
+        <form class="cta-form" id="reserveForm">
+          <div class="field-grid">
+            <label class="full">Student full name
+              <input type="text" id="rf-name" placeholder="e.g. Chidera Okafor" required>
+            </label>
+            <label>Age
+              <input type="number" id="rf-age" placeholder="e.g. 14" min="6" max="25" required>
+            </label>
+            <label>Student number
+              <input type="tel" id="rf-studentphone" placeholder="e.g. 0803 000 0000" required>
+            </label>
+            <label class="full">Student email
+              <input type="email" id="rf-email" placeholder="student@email.com" required>
+            </label>
+            <label class="full">Parent / guardian number
+              <input type="tel" id="rf-parentphone" placeholder="e.g. 0803 000 0000" required>
+            </label>
+          </div>
+          <button type="submit" class="btn">Reserve my seat</button>
+          <p class="form-note">Next step: account payment details for your training fee.</p>
+        </form>
+
+        <div class="payment-panel" id="paymentPanel">
+          <span class="eyebrow pp-eyebrow">
+            <svg class="spark-glyph" viewBox="0 0 24 24" fill="#2DD4BF"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+            Step 2 — Payment
+          </span>
+          <h3>Complete your registration</h3>
+          <p class="pp-copy">Pay your training fee to the account below, then send proof of payment to our customer line so we can confirm your seat.</p>
+
+          <div class="payment-card">
+            <div class="payment-row">
+              <span class="pp-label">Account name</span>
+              <span class="pp-value">Eduvixa Nigeria Ltd</span>
+            </div>
+            <div class="payment-row">
+              <span class="pp-label">Account number</span>
+              <span class="pp-value">
+                6721548781
+                <button type="button" class="copy-btn" id="copyAcctBtn">Copy</button>
+              </span>
+            </div>
+            <div class="payment-row">
+              <span class="pp-label">Bank</span>
+              <span class="pp-value">Moniepoint MFB</span>
+            </div>
+            <div class="payment-row">
+              <span class="pp-label">Amount</span>
+              <span class="pp-value amount">₦10,000</span>
+            </div>
+            <div class="payment-row">
+              <span class="pp-label">For</span>
+              <span class="pp-value">Complete training session</span>
+            </div>
+          </div>
+
+          <button type="button" class="btn" id="sendProofBtn">Send proof of payment on WhatsApp</button>
+          <p class="pp-note">This opens WhatsApp with your registration details — attach your payment screenshot in the chat to confirm your seat.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+  <div class="wrap">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <a href="#top" class="logo">
+          <svg class="spark-glyph" viewBox="0 0 24 24"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg>
+          Eduvixa
+        </a>
+        <p>Live, project-based AI education for students ages 8–18. Every course ends in something they built themselves.</p>
+        <div class="newsletter">
+          <h5 style="margin-top:24px;">Stay in the loop</h5>
+          <form onsubmit="event.preventDefault(); this.querySelector('button').textContent='Subscribed ✓';">
+            <input type="email" placeholder="you@email.com" required aria-label="Newsletter email">
+            <button type="submit">Join</button>
+          </form>
+        </div>
+      </div>
+      <div class="footer-col">
+        <h5>Courses</h5>
+        <ul>
+          <li><a href="#courses">Foundations</a></li>
+          <li><a href="#courses">Coding &amp; ML</a></li>
+          <li><a href="#courses">Creative AI</a></li>
+          <li><a href="#courses">Advanced &amp; Careers</a></li>
+          <li><a href="#courses">Ethics &amp; Society</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Company</h5>
+        <ul>
+          <li><a href="#why">About us</a></li>
+          <li><a href="#why">Our mentors</a></li>
+          <li><a href="#">Careers</a></li>
+          <li><a href="#">Blog</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>For families</h5>
+        <ul>
+          <li><a href="#schools">For schools</a></li>
+          <li><a href="#">Scholarships</a></li>
+          <li><a href="#">Help center</a></li>
+          <li><a href="#">Parent dashboard</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Legal</h5>
+        <ul>
+          <li><a href="#">Privacy policy</a></li>
+          <li><a href="#">Terms of service</a></li>
+          <li><a href="#">Safety policy</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Eduvixa. Made for curious minds.</span>
+      <div class="socials">
+        <a href="#">Instagram</a>
+        <a href="#">YouTube</a>
+        <a href="#">LinkedIn</a>
+        <a href="#">TikTok</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Sticky header background on scroll
+  const header = document.getElementById('siteHeader');
+  window.addEventListener('scroll', () => {
+    header.classList.toggle('scrolled', window.scrollY > 30);
+  }, { passive: true });
+
+  // Mobile menu
+  const burger = document.getElementById('burgerBtn');
+  const panel = document.getElementById('mobilePanel');
+  burger.addEventListener('click', () => {
+    const isOpen = panel.classList.toggle('open');
+    burger.classList.toggle('open', isOpen);
+    burger.setAttribute('aria-expanded', isOpen);
+    document.body.style.overflow = isOpen ? 'hidden' : '';
+  });
+  panel.querySelectorAll('a').forEach(a => a.addEventListener('click', () => {
+    panel.classList.remove('open');
+    burger.classList.remove('open');
+    burger.setAttribute('aria-expanded', false);
+    document.body.style.overflow = '';
+  }));
+
+  // Track card expand/collapse
+  document.querySelectorAll('.track-toggle').forEach(btn => {
+    const openLabel = btn.childNodes[0].textContent.trim();
+    btn.dataset.openLabel = openLabel;
+    btn.addEventListener('click', () => {
+      const list = btn.nextElementSibling;
+      const isOpen = list.classList.toggle('open');
+      btn.setAttribute('aria-expanded', isOpen);
+      btn.childNodes[0].textContent = (isOpen ? 'Hide courses ' : btn.dataset.openLabel + ' ');
+    });
+  });
+
+  // Scroll reveal
+  const revealEls = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in-view');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    revealEls.forEach(el => io.observe(el));
+  } else {
+    revealEls.forEach(el => el.classList.add('in-view'));
+  }
+
+  // Animated counters
+  const counters = document.querySelectorAll('.counter');
+  const animateCounter = (el) => {
+    const target = parseInt(el.dataset.target, 10);
+    const duration = 1400;
+    const start = performance.now();
+    const step = (now) => {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = Math.round(eased * target).toLocaleString();
+      if (progress < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+  if ('IntersectionObserver' in window) {
+    const cio = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          animateCounter(entry.target);
+          cio.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.5 });
+    counters.forEach(c => cio.observe(c));
+  }
+
+  // ---------- AI-in-action network visual ----------
+  (function buildNetwork(){
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const linesG = document.getElementById('netLines');
+    const nodesG = document.getElementById('netNodes');
+    const pulsesG = document.getElementById('netPulses');
+    if (!linesG || !nodesG || !pulsesG) return;
+
+    const W = 420, H = 220;
+    const layers = [
+      { x: 40,  count: 4, cls: 'in',  color: '#2DD4BF' },
+      { x: 210, count: 6, cls: 'hid', color: '#7C6CF0' },
+      { x: 380, count: 3, cls: 'out', color: '#FFC93C' }
+    ];
+
+    const yFor = (count, i) => (H / (count + 1)) * (i + 1);
+
+    // Coordinates per layer
+    const coords = layers.map(l =>
+      Array.from({ length: l.count }, (_, i) => ({ x: l.x, y: yFor(l.count, i) }))
+    );
+
+    // Static connecting lines (full mesh between adjacent layers)
+    for (let li = 0; li < layers.length - 1; li++) {
+      coords[li].forEach(a => {
+        coords[li + 1].forEach(b => {
+          const line = document.createElementNS(svgNS, 'line');
+          line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+          line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+          line.setAttribute('class', 'net-line');
+          linesG.appendChild(line);
+        });
+      });
+    }
+
+    // Nodes
+    layers.forEach((l, li) => {
+      coords[li].forEach(p => {
+        const c = document.createElementNS(svgNS, 'circle');
+        c.setAttribute('cx', p.x); c.setAttribute('cy', p.y);
+        c.setAttribute('r', 6);
+        c.setAttribute('class', 'net-node ' + l.cls);
+        nodesG.appendChild(c);
+      });
+    });
+
+    // Curated pulse paths: [fromLayerIndex, fromNodeIndex, toNodeIndex, delaySeconds]
+    const pulsePaths = [
+      [0, 0, 1, 0.0], [0, 1, 3, 0.3], [0, 2, 4, 0.6], [0, 3, 0, 0.9], [0, 0, 5, 1.2], [0, 2, 2, 1.5],
+      [1, 1, 0, 0.2], [1, 3, 1, 0.5], [1, 4, 2, 0.8], [1, 0, 0, 1.1], [1, 5, 1, 1.4], [1, 2, 2, 1.7]
+    ];
+
+    pulsePaths.forEach(([layerIdx, fromIdx, toIdx, delay]) => {
+      const a = coords[layerIdx][fromIdx];
+      const b = coords[layerIdx + 1][toIdx];
+      if (!a || !b) return;
+      const dot = document.createElementNS(svgNS, 'circle');
+      dot.setAttribute('r', 2.6);
+      dot.setAttribute('fill', layers[layerIdx].color);
+      dot.setAttribute('class', 'net-pulse');
+      const motion = document.createElementNS(svgNS, 'animateMotion');
+      motion.setAttribute('path', `M${a.x},${a.y} L${b.x},${b.y}`);
+      motion.setAttribute('dur', '1.8s');
+      motion.setAttribute('begin', delay + 's');
+      motion.setAttribute('repeatCount', 'indefinite');
+      const opacity = document.createElementNS(svgNS, 'animate');
+      opacity.setAttribute('attributeName', 'opacity');
+      opacity.setAttribute('values', '0;1;1;0');
+      opacity.setAttribute('keyTimes', '0;0.1;0.85;1');
+      opacity.setAttribute('dur', '1.8s');
+      opacity.setAttribute('begin', delay + 's');
+      opacity.setAttribute('repeatCount', 'indefinite');
+      dot.appendChild(motion);
+      dot.appendChild(opacity);
+      pulsesG.appendChild(dot);
+    });
+  })();
+
+  // Cycling classification readout
+  (function cycleReadout(){
+    const valueEl = document.getElementById('roValue');
+    const confEl = document.getElementById('roConf');
+    if (!valueEl || !confEl) return;
+    const labels = ['spark', 'star', 'cat face', 'tree', 'guitar', 'bicycle'];
+    let i = 0;
+    setInterval(() => {
+      i = (i + 1) % labels.length;
+      const confidence = Math.floor(Math.random() * 7) + 92; // 92–98
+      valueEl.style.opacity = 0;
+      confEl.style.opacity = 0;
+      setTimeout(() => {
+        valueEl.textContent = labels[i];
+        confEl.textContent = `confidence ${confidence}%`;
+        valueEl.style.opacity = 1;
+        confEl.style.opacity = 1;
+      }, 250);
+    }, 2600);
+  })();
+
+  // Reserve-my-seat form → reveal payment details, then send bio-data + payment note to WhatsApp
+  (function reserveSeatForm(){
+    const form = document.getElementById('reserveForm');
+    const paymentPanel = document.getElementById('paymentPanel');
+    const sendProofBtn = document.getElementById('sendProofBtn');
+    const copyAcctBtn = document.getElementById('copyAcctBtn');
+    if (!form || !paymentPanel || !sendProofBtn) return;
+
+    const WHATSAPP_NUMBER = '2347083041911';
+    const ACCOUNT_NUMBER = '6721548781';
+    let bioData = null;
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      bioData = {
+        name: document.getElementById('rf-name').value.trim(),
+        age: document.getElementById('rf-age').value.trim(),
+        studentPhone: document.getElementById('rf-studentphone').value.trim(),
+        email: document.getElementById('rf-email').value.trim(),
+        parentPhone: document.getElementById('rf-parentphone').value.trim()
+      };
+
+      form.style.display = 'none';
+      paymentPanel.classList.add('show');
+      paymentPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    if (copyAcctBtn) {
+      copyAcctBtn.addEventListener('click', () => {
+        navigator.clipboard?.writeText(ACCOUNT_NUMBER).then(() => {
+          const original = copyAcctBtn.textContent;
+          copyAcctBtn.textContent = 'Copied ✓';
+          setTimeout(() => { copyAcctBtn.textContent = original; }, 1800);
+        }).catch(() => {});
+      });
+    }
+
+    sendProofBtn.addEventListener('click', () => {
+      if (!bioData) return;
+      const message =
+        `Hi Eduvixa, I've registered for the complete training session and made payment of ₦10,000 to Eduvixa Nigeria Ltd (Moniepoint MFB, ${ACCOUNT_NUMBER}).\n\n` +
+        `*Name:* ${bioData.name}\n` +
+        `*Age:* ${bioData.age}\n` +
+        `*Student number:* ${bioData.studentPhone}\n` +
+        `*Student email:* ${bioData.email}\n` +
+        `*Parent/guardian number:* ${bioData.parentPhone}\n\n` +
+        `I'm attaching my proof of payment below.`;
+
+      const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+      window.open(url, '_blank', 'noopener');
+
+      const original = sendProofBtn.textContent;
+      sendProofBtn.textContent = 'Opening WhatsApp ✓';
+      setTimeout(() => { sendProofBtn.textContent = original; }, 2500);
+    });
+  })();
+</script>
+
+</body>
+</html>
